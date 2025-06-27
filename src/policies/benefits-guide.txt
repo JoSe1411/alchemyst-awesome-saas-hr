@@ -1,0 +1,170 @@
+Alchemyst Awesome SaaS
+Employee Benefits Guide
+(Last updated – July 2024)
+
+1. Introduction
+Welcome to Alchemyst! We are thrilled to have you on our team.
+Our benefits program is designed to support your health, financial security, professional growth, and work-life balance. We believe that investing in our employees’ well-being and development is key to our collective success. This guide explains every benefit, who is eligible, how to enroll, and where to get help.
+
+2. Eligibility & Enrollment
+Who is covered
+
+Regular full-time employees working ≥ 40 hours/week
+
+Part-time employees working 20–39 hours/week (selected benefits)
+
+Legal spouses / domestic partners and dependent children up to age 26
+
+When coverage starts
+
+Benefit	Waiting period	Effective date
+Medical, dental, vision	30 days	1st of the month following 30 days
+EAP & vision	None	Date of hire
+401(k)	90 days	1st entry date after 90 days
+How to enroll
+
+Log in to the Benefits Portal within 10 days of your start date.
+
+Upload proof of dependents (birth or marriage certificate).
+
+Choose coverage tier; review payroll deductions.
+
+E-sign your elections. Confirmation e-mail equals proof of coverage.
+
+Mid-year changes are allowed only after a Qualified Life Event (marriage, birth, loss of other coverage, etc.) and must be made within 30 days of the event.
+
+3. Health & Wellness
+Plan	Carrier	Company-paid premium	Key features
+Medical (Bronze / Silver / Gold)	United Healthcare	80% employee / 50% dependents	Hospitalization, outpatient, Rx, preventive care
+Dental	MetLife	70% employee	Preventive, basic, major services; orthodontia for dependents
+Vision	VSP	100% employee	Annual exam, frames or contacts allowance
+Mental-health EAP	HealthAdvocate	100%	10 free counselling sessions/yr; 24×7 hotline
+Eligibility & claims
+
+Medical eligibility starts first of month after 30 days; submit claims via UHC app or provider EDI.
+
+Dental eligibility after 60 days; claims auto-filed by network dentists.
+
+Vision and EAP active on day 1; schedule via VSP.com or EAP portal.
+
+4. Financial Benefits
+401(k) Retirement Plan
+
+Eligibility: 90 days of service.
+
+Company match: 100% on the first 4% of pay; pre-tax and Roth options.
+
+Vesting: 0% → 100% over 3 years (34%/33%/33%).
+
+Stock Options
+
+Granted to eligible roles after one year.
+
+Four-year vesting with 1-year cliff; exercise window 10 years.
+
+Other financial resources
+
+Free financial-planning webinars quarterly.
+
+Group discounts on auto, home and pet insurance.
+
+5. Time Off
+Leave type	Annual allowance	Accrual / usage rules
+Vacation	15 d (yrs 0-2) → 20 d (yrs 3-4) → 25 d (5 + yrs)	Accrues monthly; request ≥ 2 wks ahead; carry-over max 10 d
+Sick	10 d	No rollover; doctor’s note after 3 consecutive days
+Holidays	11 company holidays	Calendar published each Jan
+Other	Parental, bereavement, jury duty	See full policy
+6. Professional Development
+Tuition reimbursement – up to $5 000/yr for pre-approved, job-related courses; reimbursed on proof of a passing grade.
+
+Conferences & workshops – $2 000/yr per employee for fees, travel and lodging; submit request 30 days in advance.
+
+Certifications & e-learning – Udemy Business licences plus internal lunch-and-learns.
+
+7. Work Hours & Culture
+Standard schedule – 6-hour workday for all full-time employees; adherence required for benefit eligibility.
+Flexibility – Remote or flexible hours considered case-by-case with manager approval.
+Compliance – Timekeeping system monitors attendance; repeated violations may affect eligibility.
+Culture – Collaboration, respect, continuous improvement and open communication are core values.
+7-A. Remote-Work Policy (addendum)
+Alchemyst operates as a “remote-first, hub-optional” company. The remote-work policy below applies to all employees who perform their duties outside an Alchemyst office, whether full-time, hybrid or ad-hoc.
+
+Eligibility
+All regular full-time employees are automatically eligible for remote work, unless their role has a clear, documented on-site requirement (e.g., certain facilities, hardware-lab, or customer-equipment roles).
+
+Part-time and temporary staff may request remote status with manager approval.
+
+Newly hired employees are expected to spend their first two weeks in the office (or on-site with their team) for orientation and equipment pickup.
+
+Core requirements
+Topic	Standard
+Workday length	6 hours per day (same as on-site), with at least 3 hours overlapping the team’s published core hours (10:00–16:00 US Eastern).
+Work location	A secure, private space inside your home country of hire. International work longer than 30 consecutive days requires HR approval for tax and compliance reasons.
+Connectivity	Minimum 25 Mbps down / 5 Mbps up, hard-wired or reliable Wi-Fi. A speed-test screenshot is required during onboarding.
+Availability	Status set in Slack; camera-on participation in all-hands, sprint reviews, and customer calls unless bandwidth prevents it.
+Company-provided resources
+Item	Allowance / ownership
+Laptop & accessories	Standard issue Mac/PC + external keyboard, mouse, and up to 2 monitors (company property).
+Ergonomic chair	Reimbursed up to $400 every five years.
+Remote-work stipend	$50 / month (taxable) toward internet or co-working fees; auto-paid with the second payroll of each month.
+IT support	24 h SLA for equipment replacement; on-site swap centres in New York, Austin, and Berlin.
+Security & compliance
+All work must be performed on an encrypted company laptop with up-to-date endpoint protection.
+
+Public-Wi-Fi use requires VPN connection; passwords must be stored in the approved password manager (1Password).
+
+Confidential materials may not be printed or stored locally without written approval.
+
+Expense & travel guidelines
+Remote employees are expected on-site up to four times per year for team weeks, client kick-offs, or company off-sites; travel booked through Concur is reimbursed 100%.
+
+Additional voluntary office visits follow the standard travel-expense policy.
+
+Performance management
+Objectives, key results and performance reviews are identical for on-site and remote staff.
+
+Managers review Slack activity, Jira throughput and OKR progress—not “green-bubble presence”—to gauge productivity.
+
+Persistent failure to meet deliverables, respond during core hours, or comply with security policies may result in loss of remote privileges.
+
+Health & safety
+Employees must complete a home-office self-assessment checklist (lighting, ergonomics, electrical safety) within 30 days of remote approval.
+
+Work-related injuries occurring at home are covered by workers’ compensation; incidents must be reported within 24 h.
+
+Policy changes
+Alchemyst reserves the right to amend the remote-work policy to address compliance, tax, or operational needs. Employees will be given a minimum 30-day notice of material changes.
+
+8. Additional Perks
+$50/month remote-work stipend (internet or co-working)
+
+On-site ergonomic assessments
+
+Quarterly wellness challenges with prizes
+
+Employee referral bonus up to $3 000
+
+9. Employee Support Programs
+EAP – 24×7 confidential counselling, legal and financial helpline.
+
+Well-being resources – Meditation app subscription, nutrition webinars.
+
+Return-to-work coaching for new parents.
+
+10. Leaving the Company
+COBRA – You may continue medical, dental, vision for 18 months at full cost.
+
+401(k) – Options: keep account, roll over, or cash out (taxes/penalties may apply).
+
+Stock options – 90-day post-termination exercise window unless otherwise stated.
+
+11. Contacts
+Topic	Contact	Channel
+Benefits enrollment & claims	benefits@alchemyst.com	Email / HRIS ticket
+Payroll deductions	payroll@alchemyst.com	Email
+EAP 24×7 helpline	1-800-555-EAP1	Phone
+401(k) record-keeper	Fidelity – plan #87902	1-800-Fidelity
+12. Disclaimer & Update Policy
+This document is a summary of benefits. The official plan documents govern all benefits. Alchemyst reserves the right to modify, suspend, or terminate any benefit plan at any time, with or without notice, subject to applicable laws and regulations.
+
+Employees will be notified of significant changes through official channels.
