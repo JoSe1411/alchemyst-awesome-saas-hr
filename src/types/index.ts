@@ -29,6 +29,14 @@ export interface MessageMetadata {
   confidence?: number;
   sourceDocuments?: string[];
   processingTime?: number;
+  fileCount?: number;
+  fileIds?: string[];
+  toolsUsed?: string[];
+  agentMode?: 'langchain' | 'fallback' | 'basic';
+  fallbackReason?: string;
+  wordCount?: number;
+  language?: string;
+  extractedElements?: string[];
 }
 
 export interface UserContext {
@@ -94,5 +102,32 @@ export interface DocumentVersion {
   changes: string;
   updatedBy: string;
   updatedAt: Date;
+}
+
+export interface FileUpload {
+  fileId: string;
+  originalName: string;
+  size: number;
+  mimeType: string;
+  content?: string;
+  buffer?: Buffer;
+}
+
+export interface ResumeAnalysisResult {
+  candidateId: string;
+  scores: Record<string, number>;
+  recommendation: string;
+  reasoning: string[];
+  fitScore: number;
+  missingRequirements: string[];
+  strengths: string[];
+  storedAt?: string;
+}
+
+export interface ToolResult {
+  success: boolean;
+  data?: Record<string, unknown>;
+  error?: string;
+  message: string;
 }
   
