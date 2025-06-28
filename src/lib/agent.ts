@@ -1,10 +1,10 @@
-import { ChatMistralAI, MistralAIEmbeddings } from "@langchain/mistralai";
+import { MistralAIEmbeddings } from "@langchain/mistralai";
+import { ChatOpenAI } from "@langchain/openai";
 import { Document } from 'langchain/document';
 import { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import { Tool } from 'langchain/tools';
 import { createReactAgent, AgentExecutor } from 'langchain/agents';
-import { pull } from 'langchain/hub';
-import { BasePromptTemplate } from '@langchain/core/prompts';
+import { PromptTemplate } from '@langchain/core/prompts';
 
 import { EnhancedMemoryManager } from './EnhancedMemoryManager';
 import { InputProcessor } from './InputProcessor';
@@ -21,15 +21,6 @@ import { UserRole } from '../types/index';
 import dotenv from 'dotenv';
 dotenv.config();
 
-interface AgentResult {
-  output: string;
-  intermediateSteps?: Array<{
-    action?: {
-      tool?: string;
-    };
-  }>;
-}
-
 interface RedisConfig {
   url?: string;
   host?: string;
@@ -42,24 +33,28 @@ interface RedisConfig {
  * Combines enhanced memory management with LangChain tools
  */
 export class HRAgent {
-  private llm!: ChatMistralAI;
+  private llm!: ChatOpenAI;
   private embeddings!: MistralAIEmbeddings;
   private memoryManager!: EnhancedMemoryManager;
   private inputProcessor!: InputProcessor;
   private vectorStore!: MemoryVectorStore;
   private tools!: Tool[];
   private agent: AgentExecutor | null = null;
+  private isInitialized: boolean = false;
 
   constructor(redisConfig?: RedisConfig) {
     this.initializeComponents(redisConfig);
   }
 
-  private initializeComponents(redisConfig?: RedisConfig): void {
+  private async initializeComponents(redisConfig?: RedisConfig): Promise<void> {
     // Initialize LLM with Mistral
-    this.llm = new ChatMistralAI({
-      model: "mistral-large-latest",
-      apiKey: process.env.MISTRAL_API_KEY,
+    this.llm = new ChatOpenAI({
+      model: process.env.MODEL_NAME,
       temperature: 0.7,
+      configuration: {
+        apiKey: process.env.PROXY_API_KEY,
+        baseURL: process.env.PROXY_BASE_URL,
+      },
     });
 
     // Initialize embeddings
@@ -77,11 +72,82 @@ export class HRAgent {
     // Initialize vector store
     this.vectorStore = new MemoryVectorStore(this.embeddings);
 
+    // Auto-ingest policy documents on startup (AWAIT this!)
+    await this.autoIngestPolicyDocuments();
+
     // Initialize tools
     this.tools = this.initializeTools();
     
     // Initialize LangChain agent
-    this.initializeAgent();
+    await this.initializeAgent();
+    
+    this.isInitialized = true;
+  }
+
+  /**
+   * Ensure agent is initialized before processing queries
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.isInitialized) {
+      // If not initialized, wait a bit and check again
+      let attempts = 0;
+      while (!this.isInitialized && attempts < 50) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      
+      if (!this.isInitialized) {
+        throw new Error('Agent initialization timeout');
+      }
+    }
+  }
+
+  /**
+   * Auto-ingest policy documents on startup
+   */
+  private async autoIngestPolicyDocuments(): Promise<void> {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      
+      // Define policy directory path
+      const policyDir = path.join(process.cwd(), 'src', 'policies');
+      
+      if (!fs.existsSync(policyDir)) {
+        console.warn('⚠️ Policy directory not found, skipping auto-ingestion');
+        return;
+      }
+
+      const files = fs.readdirSync(policyDir);
+      const policyFiles = files.filter(file => file.endsWith('.txt') || file.endsWith('.md'));
+      
+      if (policyFiles.length === 0) {
+        console.warn('⚠️ No policy files found, skipping auto-ingestion');
+        return;
+      }
+
+      console.log(`📚 Auto-ingesting ${policyFiles.length} policy documents...`);
+      
+      for (const file of policyFiles) {
+        try {
+          const filePath = path.join(policyDir, file);
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const metadata = {
+            title: path.basename(file, path.extname(file)),
+            source: filePath
+          };
+          
+          await this.ingestDocument(content, metadata);
+          console.log(`✅ Auto-ingested: ${metadata.title}`);
+        } catch (error) {
+          console.error(`❌ Failed to auto-ingest ${file}:`, error);
+        }
+      }
+      
+      console.log('🎉 Auto-ingestion completed successfully');
+    } catch (error) {
+      console.error('❌ Auto-ingestion failed:', error);
+    }
   }
 
   /**
@@ -115,8 +181,32 @@ export class HRAgent {
    */
   private async initializeAgent(): Promise<void> {
     try {
-      // Pull the ReAct prompt from LangChain Hub
-      const prompt = await pull("hwchase17/react") as BasePromptTemplate;
+      // A more robust custom prompt to enforce the ReAct flow
+      const promptTemplate = `
+Answer the following questions as best you can. You have access to the following tools:
+
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Question: {input}
+Thought:{agent_scratchpad}`;
+
+      const prompt = new PromptTemplate({
+        template: promptTemplate,
+        inputVariables: ["tools", "tool_names", "input", "agent_scratchpad"],
+      });
       
       // Create the agent
       const agent = await createReactAgent({
@@ -129,7 +219,7 @@ export class HRAgent {
       this.agent = new AgentExecutor({
         agent,
         tools: this.tools,
-        verbose: false,
+        verbose: true,
         maxIterations: 3,
         returnIntermediateSteps: true,
       });
@@ -151,6 +241,9 @@ export class HRAgent {
     inputType: 'text' | 'voice' | 'image' | 'file' = 'text'
   ): Promise<ConversationMessage> {
     try {
+      // Ensure agent is fully initialized before processing
+      await this.ensureInitialized();
+
       // Handle file uploads first
       if (files && files.length > 0) {
         await this.handleFileUploads(files, userContext.userId);
@@ -173,14 +266,8 @@ export class HRAgent {
       
       await this.memoryManager.addMessage(userMessage, userContext.userId);
 
-      // Use agent if available, otherwise use basic processing
-      let responseMessage: ConversationMessage;
-      
-      if (this.agent && this.shouldUseAgent(input)) {
-        responseMessage = await this.processWithAgent(input, userContext, files, inputType, userMessage);
-      } else {
-        responseMessage = await this.processWithBasicLLM(input, userContext, inputType, userMessage);
-      }
+      // The ReAct agent logic has been removed in favor of a more reliable direct LLM call.
+      const responseMessage = await this.processWithBasicLLM(input, userContext, inputType, userMessage);
 
       await this.memoryManager.addMessage(responseMessage, userContext.userId);
       return responseMessage;
@@ -188,58 +275,6 @@ export class HRAgent {
     } catch (error) {
       console.error('Error processing query:', error);
       throw new Error('Failed to process query');
-    }
-  }
-
-  /**
-   * Process query using LangChain agent with tools
-   */
-  private async processWithAgent(
-    input: string,
-    userContext: UserContext,
-    files?: FileUpload[],
-    inputType: 'text' | 'voice' | 'image' | 'file' = 'text',
-    userMessage?: ConversationMessage
-  ): Promise<ConversationMessage> {
-    try {
-      // Get conversation history for context
-      const conversationHistory = await this.memoryManager.getConversationHistory(userContext.userId, 5);
-      
-      // Build context-aware input for the agent
-      const contextualInput = this.buildContextualInput(input, userContext, files, conversationHistory);
-
-      // Execute with LangChain agent
-      const result = await this.agent!.invoke({
-        input: contextualInput,
-        chat_history: this.formatChatHistory(conversationHistory)
-      }) as AgentResult;
-
-      return {
-        id: this.generateMessageId(),
-        role: 'assistant',
-        content: result.output,
-        timestamp: new Date(),
-        metadata: {
-          inputType,
-          toolsUsed: result.intermediateSteps?.map((step) => step.action?.tool).filter((tool): tool is string => Boolean(tool)) || [],
-          processingTime: userMessage ? Date.now() - userMessage.timestamp.getTime() : 0,
-          agentMode: 'langchain'
-        },
-      };
-
-    } catch (error) {
-      console.error('Agent execution failed:', error);
-      
-      // Fallback to basic LLM
-      const fallbackResponse = await this.processWithBasicLLM(input, userContext, inputType, userMessage);
-      fallbackResponse.metadata = {
-        ...fallbackResponse.metadata,
-        inputType,
-        agentMode: 'fallback',
-        fallbackReason: 'Agent execution failed'
-      };
-      
-      return fallbackResponse;
     }
   }
 
@@ -257,23 +292,35 @@ export class HRAgent {
     
     // Retrieve relevant documents
     const relevantDocs = await this.vectorStore.similaritySearch(processedInput.text, 5);
+    
+    // Debug logging
+    console.log(`🔍 Query: "${processedInput.text}"`);
+    console.log(`📚 Found ${relevantDocs.length} relevant documents:`);
+    relevantDocs.forEach((doc, index) => {
+      console.log(`  ${index + 1}. Title: ${doc.metadata.title || 'Unknown'}`);
+      console.log(`     Source: ${doc.metadata.source || 'Unknown'}`);
+      console.log(`     Content preview: ${doc.pageContent.substring(0, 100)}...`);
+    });
+    
     const documentContext = relevantDocs
       .map(doc => `Title: ${doc.metadata.title}\nContent: ${doc.pageContent}`)
       .join('\n\n---\n\n');
 
+    // Debug document context
+    console.log(`📄 Document context length: ${documentContext.length} characters`);
+    if (documentContext.length === 0) {
+      console.warn('⚠️ No document context found - LLM will rely on general knowledge');
+    }
+
     // Get conversation context
     const conversationHistory = await this.memoryManager.getConversationHistory(userContext.userId, 8);
-    const topicContext = await this.memoryManager.getTopicContext(userContext.userId);
-    const sessionContinuity = await this.memoryManager.getSessionContinuity(userContext.userId);
 
     // Build prompt
     const prompt = this.constructPrompt(
       processedInput.text,
       userContext,
       documentContext,
-      conversationHistory,
-      topicContext,
-      sessionContinuity
+      conversationHistory
     );
 
     // Get LLM response
@@ -297,100 +344,14 @@ export class HRAgent {
   }
 
   /**
-   * Determine if we should use the agent with tools
-   */
-  private shouldUseAgent(input: string): boolean {
-    const lowerInput = input.toLowerCase();
-    const agentTriggers = [
-      // Resume analysis
-      'analyze resume', 'resume analysis', 'candidate',
-      'compare candidates', 'evaluate', 'screening',
-      'job requirements', 'hiring', 'recruitment',
-      
-      // Document processing
-      'upload document', 'process document', 'categorize document',
-      'search documents', 'document search',
-      
-      // Policy search
-      'policy', 'policies', 'procedure', 'guidelines',
-      'remote work', 'vacation', 'benefits', 'code of conduct',
-      'performance review', 'compliance'
-    ];
-    
-    return agentTriggers.some(trigger => lowerInput.includes(trigger));
-  }
-
-  /**
-   * Handle file uploads
-   */
-  private async handleFileUploads(files: FileUpload[], userId: string): Promise<void> {
-    for (const file of files) {
-      try {
-        // Store file metadata
-        await this.memoryManager.storeFileMetadata(file.fileId, {
-          fileId: file.fileId,
-          originalName: file.originalName,
-          size: file.size,
-          mimeType: file.mimeType,
-          uploadedBy: userId,
-          uploadedAt: new Date().toISOString()
-        });
-        
-        console.log(`📎 File uploaded: ${file.originalName} (${file.fileId})`);
-      } catch (error) {
-        console.error(`Failed to process file ${file.originalName}:`, error);
-      }
-    }
-  }
-
-  /**
-   * Build contextual input for agent
-   */
-  private buildContextualInput(
-    input: string, 
-    userContext: UserContext, 
-    files?: FileUpload[], 
-    conversationHistory?: ConversationMessage[]
-  ): string {
-    let context = `User: ${userContext.role} in ${userContext.department}\n`;
-    
-    if (files && files.length > 0) {
-      context += `Files uploaded: ${files.map(f => f.originalName).join(', ')}\n`;
-    }
-    
-    if (conversationHistory && conversationHistory.length > 0) {
-      const recentMessages = conversationHistory.slice(-2);
-      context += `Recent conversation:\n${recentMessages.map(msg => 
-        `${msg.role}: ${msg.content}`
-      ).join('\n')}\n`;
-    }
-    
-    context += `\nQuery: ${input}`;
-    return context;
-  }
-
-  /**
-   * Format chat history for agent
-   */
-  private formatChatHistory(history: ConversationMessage[]): string {
-    return history.map(msg => 
-      `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`
-    ).join('\n');
-  }
-
-  /**
    * Construct enhanced prompt for basic LLM
    */
   private constructPrompt(
     query: string,
     userContext: UserContext,
     documentContext: string,
-    conversationHistory: ConversationMessage[],
-    topicContext: string,
-    sessionContinuity: { isActiveSession: boolean; currentTopic: string | undefined; relatedQuestionCount: number; sessionDuration: number }
+    conversationHistory: ConversationMessage[]
   ): string {
-    const roleContext = this.getRoleSpecificContext(userContext.role);
-    
     let conversationContextStr = '';
     if (conversationHistory.length > 1) {
       const recentExchanges = conversationHistory.slice(-4);
@@ -399,39 +360,26 @@ export class HRAgent {
       ).join('\n')}\n`;
     }
 
-    let topicContinuityStr = '';
-    if (topicContext && sessionContinuity.relatedQuestionCount > 1) {
-      topicContinuityStr = `\nContinuing conversation about: ${sessionContinuity.currentTopic}\n${topicContext}\n`;
-    }
+    return `You are an intelligent HR assistant for a company named Alchemyst. Your name is Aura.
+You are helping a ${userContext.role} in the ${userContext.department} department.
 
-    return `
-You are an intelligent HR assistant helping a ${userContext.role} in the ${userContext.department} department.
+Response Guidelines:
+- Be helpful, professional, and concise.
+- Answer based *only* on the documents provided in the "DOCUMENTS" section.
+- If the documents don't contain the answer, say "I could not find the answer in the provided documents." Do not use outside knowledge.
+- **Do not sign your messages or use placeholders like "[Your Name]".** Just provide the answer.
+- Only refer to the "Recent Conversation" if the user's "Current Query" is a direct follow-up question (e.g., "what about for them?"). Otherwise, ignore the conversation history.
+- If you use information from a document, cite it by its title (e.g., "According to the benefits-guide...").
 
-User Profile:
-- Role: ${userContext.role}
-- Department: ${userContext.department}
-- Communication Style: ${userContext.preferences.communicationStyle}
-- Language: ${userContext.preferences.language}
-
-${roleContext}
-${conversationContextStr}
-${topicContinuityStr}
-
-Answer based on the following documents and conversation context:
+DOCUMENTS:
 ---
 ${documentContext}
 ---
 
+Recent Conversation:
+${conversationContextStr}
+
 Current Query: ${query}
-
-Response Guidelines:
-- Be helpful and professional
-- Match the user's communication style (${userContext.preferences.communicationStyle})
-- Be concise but thorough
-- Reference previous discussion when relevant
-- If documents don't contain sufficient information, clearly state what's missing
-
-Provide a clear, actionable response.
 `;
   }
 
@@ -455,7 +403,10 @@ Provide a clear, actionable response.
    * Utility methods
    */
   private generateMessageId(): string {
-    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Use a more deterministic approach to avoid hydration issues
+    const timestamp = Date.now();
+    const randomPart = Math.random().toString(36).substr(2, 9);
+    return `msg_${timestamp}_${randomPart}`;
   }
 
   /**
@@ -526,5 +477,28 @@ Provide a clear, actionable response.
   async cleanup(): Promise<void> {
     await this.inputProcessor.cleanup();
     await this.memoryManager.close();
+  }
+
+  /**
+   * Handle file uploads
+   */
+  private async handleFileUploads(files: FileUpload[], userId: string): Promise<void> {
+    for (const file of files) {
+      try {
+        // Store file metadata
+        await this.memoryManager.storeFileMetadata(file.fileId, {
+          fileId: file.fileId,
+          originalName: file.originalName,
+          size: file.size,
+          mimeType: file.mimeType,
+          uploadedBy: userId,
+          uploadedAt: new Date().toISOString()
+        });
+        
+        console.log(`📎 File uploaded: ${file.originalName} (${file.fileId})`);
+      } catch (error) {
+        console.error(`Failed to process file ${file.originalName}:`, error);
+      }
+    }
   }
 }

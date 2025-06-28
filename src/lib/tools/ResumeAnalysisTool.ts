@@ -1,5 +1,5 @@
 import { Tool } from 'langchain/tools';
-import { ChatMistralAI } from '@langchain/mistralai';
+import { ChatOpenAI } from '@langchain/openai';
 import { EnhancedMemoryManager } from '../EnhancedMemoryManager';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -38,9 +38,9 @@ export class ResumeAnalysisTool extends Tool {
   Returns comprehensive analysis with scores, fit assessment, and recommendations.`;
 
   private memoryManager: EnhancedMemoryManager;
-  private llm: ChatMistralAI;
+  private llm: ChatOpenAI;
 
-  constructor(memoryManager: EnhancedMemoryManager, llm: ChatMistralAI) {
+  constructor(memoryManager: EnhancedMemoryManager, llm: ChatOpenAI) {
     super();
     this.memoryManager = memoryManager;
     this.llm = llm;
