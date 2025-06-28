@@ -2,12 +2,6 @@ import { HRAgent } from '../lib/agent';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Helper to create a File object from a buffer (Node.js)
-function bufferToFile(buffer: Buffer, filename: string): File {
-  const blob = new Blob([buffer]);
-  return new File([blob], filename);
-}
-
 async function ingestDirectory(dirPath: string) {
   const agent = new HRAgent();
   const absoluteDir = path.resolve(dirPath);
@@ -28,14 +22,21 @@ async function ingestDirectory(dirPath: string) {
     if (!fs.statSync(fullPath).isFile()) continue;
 
     try {
-      const buffer = fs.readFileSync(fullPath);
-      const file = bufferToFile(buffer, entry);
-      const doc = await agent.ingestDocument(file);
-      console.log(`✅ Ingested "${doc.title}" (${doc.chunks.length} chunks)`);
+      const content = fs.readFileSync(fullPath, 'utf-8');
+      const metadata = {
+        title: path.basename(entry, path.extname(entry)),
+        source: fullPath
+      };
+      
+      await agent.ingestDocument(content, metadata);
+      console.log(`✅ Ingested "${metadata.title}" from ${entry}`);
     } catch (err) {
       console.error(`❌ Failed to ingest ${entry}:`, err instanceof Error ? err.message : err);
     }
   }
+  
+  // Cleanup resources
+  await agent.cleanup();
 }
 
 // Default directory is ./src/policies. Allow override via CLI.
