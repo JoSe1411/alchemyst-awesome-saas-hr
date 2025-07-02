@@ -17,9 +17,11 @@
     "@langchain/core": "^0.3.61",
     "@langchain/mistralai": "^0.2.1",
     "@langchain/openai": "^0.5.15",
+    "@prisma/client": "^6.11.0",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-toast": "^1.2.14",
+    "@types/pg": "^8.15.4",
     "chalk": "^5.4.1",
     "cheerio": "^1.1.0",
     "class-variance-authority": "^0.7.1",
@@ -31,6 +33,7 @@
     "next": "15.3.4",
     "pdf-parse": "^1.1.1",
     "pdf2pic": "^3.1.1",
+    "pg": "^8.16.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
@@ -52,6 +55,7 @@
     "@types/uuid": "^10.0.0",
     "eslint": "^9",
     "eslint-config-next": "15.3.4",
+    "prisma": "^6.11.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

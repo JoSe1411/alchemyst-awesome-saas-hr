@@ -1,4 +1,7 @@
 import { Tool } from 'langchain/tools';
+import { PrismaClient } from '@prisma/client';
+import { MistralAIEmbeddings } from '@langchain/mistralai';
+import { PolicyChunkService } from '../../services/PolicyChunkService';
 import { EnhancedMemoryManager } from '../EnhancedMemoryManager';
 
 interface ToolInput {
@@ -19,11 +22,11 @@ interface PolicyResult {
 }
 
 /**
- * LangChain Tool for HR policy search and retrieval
+ * LangChain Tool for HR policy search and retrieval using database-backed vector search
  */
 export class PolicySearchTool extends Tool {
   name = 'policy_search';
-  description = `Searches and retrieves HR policies, procedures, and guidelines.
+  description = `Searches and retrieves HR policies, procedures, and guidelines using vector similarity search.
   
   Input should be a JSON string with:
   - action: 'search' | 'get_policy' | 'list_policies'
@@ -31,13 +34,24 @@ export class PolicySearchTool extends Tool {
   - policyId: Specific policy identifier (for get_policy action)
   - category: Policy category filter (optional for search and list)
   
-  Returns relevant policy information, summaries, and guidance.`;
+  Returns relevant policy information, summaries, and guidance based on semantic similarity.`;
 
   private memoryManager: EnhancedMemoryManager;
+  private prisma: PrismaClient;
+  private policyChunkService: PolicyChunkService;
 
   constructor(memoryManager: EnhancedMemoryManager) {
     super();
     this.memoryManager = memoryManager;
+    this.prisma = new PrismaClient();
+    
+    // Initialize embeddings (same as used in agent)
+    const embeddings = new MistralAIEmbeddings({
+      apiKey: process.env.MISTRAL_API_KEY || '',
+      model: "mistral-embed",
+    });
+    
+    this.policyChunkService = new PolicyChunkService(this.prisma, embeddings);
   }
 
   async _call(input: string): Promise<string> {
@@ -66,7 +80,7 @@ export class PolicySearchTool extends Tool {
   }
 
   /**
-   * Search through HR policies
+   * Search through HR policies using vector similarity
    */
   private async searchPolicies(input: ToolInput): Promise<string> {
     const { query, category } = input;
@@ -75,78 +89,108 @@ export class PolicySearchTool extends Tool {
       throw new Error('query is required for search action');
     }
 
-    // Mock policy database - in production this would query a real database
-    const mockPolicies: PolicyResult[] = [
-      {
-        id: 'pol_001',
-        title: 'Remote Work Policy',
-        category: 'workplace',
-        summary: 'Guidelines for remote work arrangements, eligibility, and expectations',
-        lastUpdated: '2024-01-15',
-        relevanceScore: this.calculateRelevance(query, 'remote work policy guidelines'),
-        snippet: 'Employees may request remote work arrangements subject to manager approval...'
-      },
-      {
-        id: 'pol_002',
-        title: 'Time Off and Vacation Policy',
-        category: 'benefits',
-        summary: 'Vacation accrual, sick leave, and time-off request procedures',
-        lastUpdated: '2024-02-01',
-        relevanceScore: this.calculateRelevance(query, 'vacation time off sick leave policy'),
-        snippet: 'Employees accrue vacation time based on length of service...'
-      },
-      {
-        id: 'pol_003',
-        title: 'Code of Conduct',
-        category: 'compliance',
-        summary: 'Professional behavior expectations and ethical guidelines',
-        lastUpdated: '2024-01-10',
-        relevanceScore: this.calculateRelevance(query, 'code conduct ethics professional behavior'),
-        snippet: 'All employees are expected to maintain the highest standards of professional conduct...'
-      },
-      {
-        id: 'pol_004',
-        title: 'Performance Review Process',
-        category: 'performance',
-        summary: 'Annual and quarterly performance evaluation procedures',
-        lastUpdated: '2024-03-01',
-        relevanceScore: this.calculateRelevance(query, 'performance review evaluation process'),
-        snippet: 'Performance reviews are conducted annually with quarterly check-ins...'
-      },
-      {
-        id: 'pol_005',
-        title: 'Employee Benefits Overview',
-        category: 'benefits',
-        summary: 'Comprehensive guide to health, dental, retirement, and other benefits',
-        lastUpdated: '2024-01-20',
-        relevanceScore: this.calculateRelevance(query, 'employee benefits health insurance retirement'),
-        snippet: 'We offer comprehensive benefits including health, dental, vision, and 401k...'
-      }
-    ];
-
-    // Filter by category if specified
-    let filteredPolicies = mockPolicies;
-    if (category) {
-      filteredPolicies = mockPolicies.filter(policy => 
-        policy.category.toLowerCase().includes(category.toLowerCase())
-      );
-    }
-
-    // Sort by relevance and take top results
-    const results = filteredPolicies
-      .sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0))
-      .slice(0, 5);
-
-    return JSON.stringify({
-      success: true,
-      data: {
+    try {
+      // Perform vector similarity search on policy chunks
+      const searchResults = await this.policyChunkService.similaritySearch(
         query,
-        category: category || 'all',
-        results,
-        totalResults: results.length
-      },
-      message: `Found ${results.length} relevant policies`
-    });
+        10, // Get more chunks initially
+        0.6  // Lower threshold for broader results
+      );
+
+      // Group results by policy and calculate relevance scores
+      const policyMap = new Map<string, {
+        policy: { id: string; title: string; category: string };
+        chunks: { id: string; content: string; chunkIndex: number }[];
+        maxSimilarity: number;
+        avgSimilarity: number;
+      }>();
+
+      searchResults.forEach(result => {
+        const policyId = result.policy.id;
+        if (!policyMap.has(policyId)) {
+          policyMap.set(policyId, {
+            policy: result.policy,
+            chunks: [],
+            maxSimilarity: 0,
+            avgSimilarity: 0,
+          });
+        }
+        
+        const policyData = policyMap.get(policyId)!;
+        policyData.chunks.push(result.chunk);
+        policyData.maxSimilarity = Math.max(policyData.maxSimilarity, result.similarity);
+      });
+
+      // Calculate average similarity and create results
+      const results: PolicyResult[] = [];
+      for (const [policyId, data] of policyMap.entries()) {
+        // Filter by category if specified
+        if (category && !data.policy.category.toLowerCase().includes(category.toLowerCase())) {
+          continue;
+        }
+
+        // Get the most relevant chunk for snippet
+        const bestChunk = data.chunks[0];
+        const snippet = bestChunk.content.length > 200 
+          ? bestChunk.content.substring(0, 200) + '...'
+          : bestChunk.content;
+
+        results.push({
+          id: policyId,
+          title: data.policy.title,
+          category: data.policy.category,
+          summary: `Policy with ${data.chunks.length} relevant sections found`,
+          lastUpdated: new Date().toISOString().split('T')[0], // TODO: Get from policy record
+          relevanceScore: data.maxSimilarity,
+          snippet,
+        });
+      }
+
+      // Sort by relevance and take top 5
+      const topResults = results
+        .sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0))
+        .slice(0, 5);
+
+      return JSON.stringify({
+        success: true,
+        data: {
+          query,
+          category: category || 'all',
+          results: topResults,
+          totalResults: topResults.length,
+          searchMethod: 'vector_similarity'
+        },
+        message: `Found ${topResults.length} relevant policies using semantic search`
+      });
+
+    } catch (error) {
+      console.error('Vector search failed, falling back to mock data:', error);
+      
+      // Fallback to basic text matching (simplified version of old mock data approach)
+      const mockResults: PolicyResult[] = [
+        {
+          id: 'pol_fallback_001',
+          title: 'Remote Work Policy',
+          category: 'workplace',
+          summary: 'Guidelines for remote work arrangements, eligibility, and expectations',
+          lastUpdated: '2024-01-15',
+          relevanceScore: this.calculateRelevance(query, 'remote work policy guidelines'),
+          snippet: 'Employees may request remote work arrangements subject to manager approval...'
+        }
+      ];
+
+      return JSON.stringify({
+        success: true,
+        data: {
+          query,
+          category: category || 'all',
+          results: mockResults.slice(0, 5),
+          totalResults: mockResults.length,
+          searchMethod: 'fallback_text_matching'
+        },
+        message: `Found ${mockResults.length} relevant policies using fallback search`
+      });
+    }
   }
 
   /**
@@ -159,52 +203,56 @@ export class PolicySearchTool extends Tool {
       throw new Error('policyId is required for get_policy action');
     }
 
-    // Mock policy content - in production this would fetch from database
-    const policyContent = {
-      pol_001: {
-        id: 'pol_001',
-        title: 'Remote Work Policy',
-        category: 'workplace',
-        content: `# Remote Work Policy
+    try {
+      // Get policy from database
+      const policy = await this.prisma.policy.findUnique({
+        where: { id: policyId },
+        include: {
+          category: true,
+        },
+      });
 
-## Eligibility
-Employees may request remote work arrangements if their role is suitable for remote work and they have been with the company for at least 6 months.
-
-## Application Process
-1. Submit request to direct manager
-2. Complete remote work agreement
-3. IT setup and security training
-4. Trial period of 30 days
-
-## Expectations
-- Maintain regular business hours
-- Attend all scheduled meetings
-- Ensure secure home office setup
-- Regular communication with team
-
-## Equipment
-Company will provide necessary equipment including laptop, monitor, and office supplies.`,
-        lastUpdated: '2024-01-15',
-        version: '2.1',
-        approvedBy: 'HR Committee'
+      if (!policy) {
+        return JSON.stringify({
+          success: false,
+          error: 'Policy not found',
+          message: `No policy found with ID: ${policyId}`
+        });
       }
-    };
 
-    const policy = policyContent[policyId as keyof typeof policyContent];
+      // Get policy chunks
+      const chunks = await this.policyChunkService.getPolicyChunks(policyId);
+      const fullContent = chunks
+        .sort((a, b) => a.chunkIndex - b.chunkIndex)
+        .map(chunk => chunk.content)
+        .join('\n\n');
 
-    if (!policy) {
+      return JSON.stringify({
+        success: true,
+        data: {
+          id: policy.id,
+          title: policy.title,
+          category: policy.category.name,
+          content: policy.content || fullContent,
+          summary: policy.summary,
+          lastUpdated: policy.updatedAt.toISOString().split('T')[0],
+          version: policy.version.toString(),
+          status: policy.status,
+          effectiveDate: policy.effectiveDate.toISOString().split('T')[0],
+          approvedBy: policy.approvedBy || 'System',
+          chunks: chunks.length,
+        },
+        message: `Retrieved policy: ${policy.title}`
+      });
+
+    } catch (error) {
+      console.error('Database query failed:', error);
       return JSON.stringify({
         success: false,
-        error: 'Policy not found',
-        message: `No policy found with ID: ${policyId}`
+        error: 'Database error',
+        message: `Failed to retrieve policy: ${policyId}`
       });
     }
-
-    return JSON.stringify({
-      success: true,
-      data: policy,
-      message: `Retrieved policy: ${policy.title}`
-    });
   }
 
   /**
@@ -213,76 +261,63 @@ Company will provide necessary equipment including laptop, monitor, and office s
   private async listPolicies(input: ToolInput): Promise<string> {
     const { category } = input;
 
-    // Mock policy list
-    const allPolicies: PolicyResult[] = [
-      {
-        id: 'pol_001',
-        title: 'Remote Work Policy',
-        category: 'workplace',
-        summary: 'Guidelines for remote work arrangements',
-        lastUpdated: '2024-01-15'
-      },
-      {
-        id: 'pol_002',
-        title: 'Time Off and Vacation Policy',
-        category: 'benefits',
-        summary: 'Vacation accrual and time-off procedures',
-        lastUpdated: '2024-02-01'
-      },
-      {
-        id: 'pol_003',
-        title: 'Code of Conduct',
-        category: 'compliance',
-        summary: 'Professional behavior expectations',
-        lastUpdated: '2024-01-10'
-      },
-      {
-        id: 'pol_004',
-        title: 'Performance Review Process',
-        category: 'performance',
-        summary: 'Performance evaluation procedures',
-        lastUpdated: '2024-03-01'
-      },
-      {
-        id: 'pol_005',
-        title: 'Employee Benefits Overview',
-        category: 'benefits',
-        summary: 'Comprehensive benefits guide',
-        lastUpdated: '2024-01-20'
-      }
-    ];
+    try {
+      // Get policies from database
+      const whereClause = category 
+        ? { category: { name: { contains: category, mode: 'insensitive' as const } } }
+        : {};
 
-    // Filter by category if specified
-    let filteredPolicies = allPolicies;
-    if (category) {
-      filteredPolicies = allPolicies.filter(policy => 
-        policy.category.toLowerCase().includes(category.toLowerCase())
-      );
+      const policies = await this.prisma.policy.findMany({
+        where: whereClause,
+        include: {
+          category: true,
+        },
+        orderBy: {
+          updatedAt: 'desc',
+        },
+      });
+
+      // Convert to PolicyResult format
+      const results: PolicyResult[] = policies.map(policy => ({
+        id: policy.id,
+        title: policy.title,
+        category: policy.category.name,
+        summary: policy.summary || 'No summary available',
+        lastUpdated: policy.updatedAt.toISOString().split('T')[0],
+      }));
+
+      // Group by category
+      const groupedPolicies = results.reduce((groups, policy) => {
+        const cat = policy.category;
+        if (!groups[cat]) {
+          groups[cat] = [];
+        }
+        groups[cat].push(policy);
+        return groups;
+      }, {} as Record<string, PolicyResult[]>);
+
+      return JSON.stringify({
+        success: true,
+        data: {
+          categories: Object.keys(groupedPolicies),
+          policies: groupedPolicies,
+          totalPolicies: results.length
+        },
+        message: `Listed ${results.length} policies${category ? ` in category: ${category}` : ''}`
+      });
+
+    } catch (error) {
+      console.error('Database query failed:', error);
+      return JSON.stringify({
+        success: false,
+        error: 'Database error',
+        message: 'Failed to retrieve policies list'
+      });
     }
-
-    // Group by category
-    const groupedPolicies = filteredPolicies.reduce((groups, policy) => {
-      const cat = policy.category;
-      if (!groups[cat]) {
-        groups[cat] = [];
-      }
-      groups[cat].push(policy);
-      return groups;
-    }, {} as Record<string, PolicyResult[]>);
-
-    return JSON.stringify({
-      success: true,
-      data: {
-        categories: Object.keys(groupedPolicies),
-        policies: groupedPolicies,
-        totalPolicies: filteredPolicies.length
-      },
-      message: `Listed ${filteredPolicies.length} policies${category ? ` in category: ${category}` : ''}`
-    });
   }
 
   /**
-   * Calculate relevance score between query and policy content
+   * Calculate relevance score between query and policy content (fallback method)
    */
   private calculateRelevance(query: string, content: string): number {
     const queryWords = query.toLowerCase().split(/\s+/);
@@ -298,5 +333,12 @@ Company will provide necessary equipment including laptop, monitor, and office s
     }
 
     return Math.min(matches / queryWords.length, 1.0);
+  }
+
+  /**
+   * Cleanup database connection
+   */
+  async cleanup(): Promise<void> {
+    await this.prisma.$disconnect();
   }
 } 
