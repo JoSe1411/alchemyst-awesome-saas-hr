@@ -275,6 +275,3 @@ For support and questions:
 
 ---
 
-**Built with ❤️ by the TalentWise Team**
-
-*Revolutionizing HR through intelligent automation*
