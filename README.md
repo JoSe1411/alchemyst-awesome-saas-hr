@@ -259,19 +259,4 @@ We welcome contributions! Please follow these steps:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
-
-For support and questions:
-- 📧 Email: support@talentwise.ai
-- 💬 Discord: [Join our community](https://discord.gg/talentwise)
-- 📚 Documentation: [docs.talentwise.ai](https://docs.talentwise.ai)
-
-## 🏆 Success Metrics
-
-- **24/7 Availability**: Zero downtime HR support
-- **<30s Response Time**: Lightning-fast AI responses
-- **500+ Companies**: Trusted by growing organizations
-- **95% Satisfaction Rate**: Highly rated by users
-
----
 
