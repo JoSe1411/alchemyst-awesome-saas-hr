@@ -1,223 +1,154 @@
-import { createClient, RedisClientType } from 'redis';
-import type { ConversationMessage, UserContext } from '../types/index';
+import { PrismaClient } from '@prisma/client';
+import type { ConversationMessage, UserContext, MessageMetadata } from '../types/index';
+import type { JsonValue } from '@prisma/client/runtime/library';
 
-interface RedisConfig {
-  url?: string;
-  host?: string;
-  port?: number;
-  password?: string;
-}
-
-interface ResumeAnalysisResult {
-  candidateId: string;
-  scores: Record<string, number>;
-  recommendation: string;
-  reasoning: string[];
-  fitScore: number;
-  missingRequirements: string[];
-  strengths: string[];
-  storedAt?: string;
-}
-
-interface FileMetadata {
-  fileId: string;
-  originalName: string;
-  size: number;
-  mimeType: string;
-  uploadedBy: string;
-  uploadedAt?: string;
-}
+const prisma = new PrismaClient();
 
 /**
- * Enhanced Memory Manager with Redis persistence and in-memory fallback
+ * Simplified Memory Manager with PostgreSQL persistence only
  */
 export class EnhancedMemoryManager {
-  private redis: RedisClientType | null = null;
-  private redisConnected = false;
-  private connectionAttempted = false;
-  
-  // In-memory storage as fallback
-  private memoryStorage: Map<string, ConversationMessage[]> = new Map();
+  // In-memory cache for faster access during active sessions
+  private memoryCache: Map<string, ConversationMessage[]> = new Map();
   private userContexts: Map<string, UserContext> = new Map();
 
-  constructor(config?: RedisConfig) {
-    this.initializeRedis(config);
+  constructor() {
+    // No Redis initialization needed
   }
 
   /**
-   * Initialize Redis connection with fallback
-   */
-  private async initializeRedis(config?: RedisConfig): Promise<void> {
-    if (this.connectionAttempted) return;
-    this.connectionAttempted = true;
-
-    try {
-      // Create Redis client
-      this.redis = createClient({
-        url: config?.url || 'redis://localhost:6379',
-        socket: {
-          host: config?.host || 'localhost',
-          port: config?.port || 6379,
-          reconnectStrategy: (retries: number) => {
-            if (retries > 3) {
-              console.warn('Redis reconnection failed, using in-memory fallback');
-              return false;
-            }
-            return Math.min(retries * 100, 3000);
-          }
-        }
-      });
-
-      // Handle connection events
-      this.redis.on('error', (error: Error) => {
-        console.warn('Redis connection error:', error.message);
-        this.redisConnected = false;
-      });
-
-      this.redis.on('connect', () => {
-        console.log('✅ Redis connected successfully');
-        this.redisConnected = true;
-      });
-
-      this.redis.on('disconnect', () => {
-        console.warn('⚠️ Redis disconnected, using in-memory fallback');
-        this.redisConnected = false;
-      });
-
-      // Connect to Redis
-      await this.redis.connect();
-      
-    } catch (error) {
-      console.warn('Redis initialization failed, using in-memory storage:', error);
-      this.redis = null;
-      this.redisConnected = false;
-    }
-  }
-
-  /**
-   * Enhanced message storage with Redis persistence
+   * Add message with PostgreSQL persistence
    */
   async addMessage(message: ConversationMessage, userId: string): Promise<void> {
     try {
-      // Try Redis first
-      if (this.redis && this.redisConnected) {
-        const key = `messages:${userId}`;
-        
-        // Store message in Redis list (newest first)
-        await this.redis.lPush(key, JSON.stringify({
-          ...message,
-          timestamp: message.timestamp.toISOString() // Serialize date
-        }));
-        
-        // Keep only last 100 messages
-        await this.redis.lTrim(key, 0, 99);
-        
-        // Set expiry to 24 hours
-        await this.redis.expire(key, 86400);
-        
-        // Also store user session
-        await this.storeUserSession(userId);
-        
-        console.log(`💾 Message stored in Redis for user: ${userId}`);
-        return;
+      // Add to memory cache first for fast access
+      const messages = this.memoryCache.get(userId) || [];
+      messages.push(message);
+      
+      // Keep only last 100 messages in cache
+      if (messages.length > 100) {
+        messages.splice(0, messages.length - 100);
       }
-    } catch (error) {
-      console.warn('Redis storage failed, using memory fallback:', error);
-    }
+      
+      this.memoryCache.set(userId, messages);
 
-    // Fallback to in-memory storage
-    const messages = this.memoryStorage.get(userId) || [];
-    messages.push(message);
-    
-    // Keep only last 100 messages
-    if (messages.length > 100) {
-      messages.splice(0, messages.length - 100);
+      // Determine user type from database
+      const userType = await this.getUserType(userId);
+      
+      // Get or create conversation session
+      let session = await prisma.conversationSession.findFirst({
+        where: {
+          userId,
+          userType,
+        },
+        orderBy: {
+          updatedAt: 'desc'
+        }
+      });
+
+      if (!session) {
+        // Create new session
+        session = await prisma.conversationSession.create({
+          data: {
+            userId,
+            userType,
+            title: this.generateSessionTitle(message.content),
+            messages: [this.serializeMessage(message)]
+          }
+        });
+      } else {
+        // Update existing session
+        const currentMessages = Array.isArray(session.messages) ? session.messages as JsonValue[] : [];
+        const updatedMessages = [...currentMessages, this.serializeMessage(message)];
+        
+        // Keep only last 200 messages in database
+        if (updatedMessages.length > 200) {
+          updatedMessages.splice(0, updatedMessages.length - 200);
+        }
+
+        await prisma.conversationSession.update({
+          where: { id: session.id },
+          data: {
+            messages: updatedMessages,
+            updatedAt: new Date()
+          }
+        });
+      }
+
+      console.log(`💾 Message stored in database for user: ${userId}`);
+    } catch (error) {
+      console.error('Database storage failed:', error);
+      // Keep in memory cache as fallback
     }
-    
-    this.memoryStorage.set(userId, messages);
   }
 
   /**
-   * Enhanced conversation history retrieval
+   * Get conversation history from database with memory cache fallback
    */
   async getConversationHistory(userId: string, limit: number = 10): Promise<ConversationMessage[]> {
     try {
-      // Try Redis first
-      if (this.redis && this.redisConnected) {
-        const key = `messages:${userId}`;
-        const messages = await this.redis.lRange(key, 0, limit - 1);
-        
-        if (messages.length > 0) {
-          const parsedMessages = messages.map((msg: string) => {
-            const parsed = JSON.parse(msg);
-            return {
-              ...parsed,
-              timestamp: new Date(parsed.timestamp) // Deserialize date
-            };
-          });
-          
-          console.log(`📖 Retrieved ${parsedMessages.length} messages from Redis for user: ${userId}`);
-          return parsedMessages.reverse(); // Reverse to get chronological order
+      // Try memory cache first for recent sessions
+      const cachedMessages = this.memoryCache.get(userId);
+      if (cachedMessages && cachedMessages.length > 0) {
+        const recentMessages = cachedMessages.slice(-limit);
+        if (recentMessages.length >= limit) {
+          return recentMessages;
         }
       }
+
+      // Fetch from database
+      const userType = await this.getUserType(userId);
+      const session = await prisma.conversationSession.findFirst({
+        where: {
+          userId,
+          userType,
+        },
+        orderBy: {
+          updatedAt: 'desc'
+        }
+      });
+
+      if (session && Array.isArray(session.messages)) {
+        const messages = (session.messages as JsonValue[])
+          .map((msg) => this.deserializeMessage(msg))
+          .filter((msg): msg is ConversationMessage => msg !== null)
+          .slice(-limit);
+        
+        // Update memory cache
+        this.memoryCache.set(userId, messages);
+        
+        console.log(`📖 Retrieved ${messages.length} messages from database for user: ${userId}`);
+        return messages;
+      }
     } catch (error) {
-      console.warn('Redis retrieval failed, using memory fallback:', error);
+      console.error('Database retrieval failed:', error);
     }
 
-    // Fallback to in-memory storage
-    const messages = this.memoryStorage.get(userId) || [];
-    return messages.slice(-limit);
+    // Fallback to memory cache
+    return this.memoryCache.get(userId)?.slice(-limit) || [];
   }
 
   /**
-   * Enhanced context storage
+   * Update user context (simplified without Redis)
    */
   async updateContext(userContext: UserContext): Promise<void> {
-    try {
-      // Try Redis first
-      if (this.redis && this.redisConnected) {
-        const key = `session:${userContext.userId}`;
-        
-        // Store user context
-        await this.redis.setEx(key, 86400, JSON.stringify({
-          ...userContext,
-          lastUpdated: new Date().toISOString()
-        }));
-        
-        console.log(`🔄 Context updated in Redis for user: ${userContext.userId}`);
-      }
-    } catch (error) {
-      console.warn('Redis context update failed, using memory fallback:', error);
-    }
-
-    // Always update memory (fallback + faster access)
+    // Store in memory cache
     this.userContexts.set(userContext.userId, userContext);
+    console.log(`🔄 Context updated for user: ${userContext.userId}`);
   }
 
   /**
-   * Get user context with Redis support
+   * Get user context
    */
   async getUserContext(userId: string): Promise<UserContext | null> {
-    try {
-      // Try Redis first
-      if (this.redis && this.redisConnected) {
-        const key = `session:${userId}`;
-        const contextData = await this.redis.get(key);
-        
-        if (contextData) {
-          const parsed = JSON.parse(contextData);
-          return {
-            ...parsed,
-            sessionHistory: await this.getConversationHistory(userId)
-          };
-        }
-      }
-    } catch (error) {
-      console.warn('Redis context retrieval failed, using memory fallback:', error);
+    const context = this.userContexts.get(userId);
+    if (context) {
+      return {
+        ...context,
+        sessionHistory: await this.getConversationHistory(userId)
+      };
     }
-
-    // Fallback to in-memory storage
-    return this.userContexts.get(userId) || null;
+    return null;
   }
 
   /**
@@ -308,191 +239,147 @@ export class EnhancedMemoryManager {
   }
 
   /**
-   * Extract topics from conversation messages
+   * Private helper methods
    */
+  private async getUserType(userId: string): Promise<string> {
+    try {
+      // Check if user is a manager
+      const manager = await prisma.manager.findUnique({ where: { id: userId } });
+      if (manager) return 'manager';
+      
+      // Check if user is an employee
+      const employee = await prisma.employee.findUnique({ where: { id: userId } });
+      if (employee) return 'employee';
+      
+      // Default to employee if not found
+      return 'employee';
+    } catch (error) {
+      console.warn('Failed to determine user type:', error);
+      return 'employee';
+    }
+  }
+
+  private generateSessionTitle(firstMessage: string): string {
+    // Generate a simple title from the first message
+    const words = firstMessage.split(' ').slice(0, 5);
+    return words.join(' ') + (firstMessage.split(' ').length > 5 ? '...' : '');
+  }
+
+  private serializeMessage(message: ConversationMessage): JsonValue {
+    return {
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      timestamp: message.timestamp.toISOString(),
+      metadata: message.metadata || null
+    } as JsonValue;
+  }
+
+  private deserializeMessage(messageData: JsonValue): ConversationMessage | null {
+    try {
+      if (typeof messageData === 'object' && messageData !== null && !Array.isArray(messageData)) {
+        const data = messageData as Record<string, unknown>;
+        return {
+          id: data.id as string,
+          role: data.role as 'user' | 'assistant',
+          content: data.content as string,
+          timestamp: new Date(data.timestamp as string),
+          metadata: data.metadata ? data.metadata as MessageMetadata : undefined
+        };
+      }
+      return null;
+    } catch (error) {
+      console.warn('Failed to deserialize message:', error);
+      return null;
+    }
+  }
+
   private extractTopics(messages: string[]): string[] {
-    const topicKeywords = {
-      'recruitment': ['hire', 'recruit', 'candidate', 'interview', 'job', 'position', 'vacancy'],
-      'performance': ['performance', 'review', 'evaluation', 'feedback', 'goal', 'improvement'],
-      'benefits': ['benefits', 'insurance', 'vacation', 'leave', 'pto', 'healthcare', 'retirement'],
-      'policy': ['policy', 'procedure', 'guideline', 'rule', 'regulation', 'compliance'],
-      'training': ['training', 'development', 'course', 'skill', 'education', 'learning'],
-      'payroll': ['salary', 'pay', 'wage', 'compensation', 'bonus', 'payroll'],
-      'onboarding': ['onboard', 'new hire', 'orientation', 'welcome', 'first day'],
-      'employee relations': ['conflict', 'dispute', 'grievance', 'complaint', 'relationship']
-    };
-
+    // Simple topic extraction - could be enhanced with NLP
+    const commonTopics = [
+      'benefits', 'vacation', 'leave', 'policy', 'payroll', 'hr',
+      'hiring', 'training', 'performance', 'onboarding', 'compliance'
+    ];
+    
     const foundTopics: string[] = [];
-    const messageText = messages.join(' ');
-
-    for (const [topic, keywords] of Object.entries(topicKeywords)) {
-      if (keywords.some(keyword => messageText.includes(keyword))) {
+    const messagesText = messages.join(' ').toLowerCase();
+    
+    for (const topic of commonTopics) {
+      if (messagesText.includes(topic)) {
         foundTopics.push(topic);
       }
     }
-
-    return foundTopics.slice(0, 3); // Return top 3 topics
-  }
-
-  /**
-   * Store resume analysis results (NEW FEATURE)
-   */
-  async storeResumeAnalysis(candidateId: string, analysis: ResumeAnalysisResult): Promise<void> {
-    try {
-      if (this.redis && this.redisConnected) {
-        const key = `analysis:${candidateId}`;
-        
-        await this.redis.setEx(key, 86400, JSON.stringify({
-          ...analysis,
-          storedAt: new Date().toISOString()
-        }));
-        
-        console.log(`📊 Resume analysis stored for candidate: ${candidateId}`);
-      }
-    } catch (error) {
-      console.warn('Failed to store resume analysis:', error);
-    }
-  }
-
-  /**
-   * Retrieve resume analysis results (NEW FEATURE)
-   */
-  async getResumeAnalysis(candidateId: string): Promise<ResumeAnalysisResult | null> {
-    try {
-      if (this.redis && this.redisConnected) {
-        const key = `analysis:${candidateId}`;
-        const data = await this.redis.get(key);
-        
-        if (data) {
-          const parsed = JSON.parse(data) as ResumeAnalysisResult;
-          console.log(`📊 Resume analysis retrieved for candidate: ${candidateId}`);
-          return parsed;
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to retrieve resume analysis:', error);
-    }
     
-    return null;
-  }
-
-  /**
-   * Store file metadata for web uploads (NEW FEATURE)
-   */
-  async storeFileMetadata(fileId: string, metadata: FileMetadata): Promise<void> {
-    try {
-      if (this.redis && this.redisConnected) {
-        const key = `file:${fileId}`;
-        
-        await this.redis.setEx(key, 3600, JSON.stringify({
-          ...metadata,
-          uploadedAt: new Date().toISOString()
-        })); // 1 hour TTL for temporary files
-        
-        console.log(`📁 File metadata stored: ${fileId}`);
-      }
-    } catch (error) {
-      console.warn('Failed to store file metadata:', error);
-    }
-  }
-
-  /**
-   * Get file metadata (NEW FEATURE)
-   */
-  async getFileMetadata(fileId: string): Promise<FileMetadata | null> {
-    try {
-      if (this.redis && this.redisConnected) {
-        const key = `file:${fileId}`;
-        const data = await this.redis.get(key);
-        
-        if (data) {
-          return JSON.parse(data) as FileMetadata;
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to retrieve file metadata:', error);
-    }
-    
-    return null;
-  }
-
-  /**
-   * Private helper to store session data
-   */
-  private async storeUserSession(userId: string): Promise<void> {
-    try {
-      if (this.redis && this.redisConnected) {
-        const sessionKey = `session_activity:${userId}`;
-        await this.redis.setEx(sessionKey, 86400, new Date().toISOString());
-      }
-    } catch {
-      // Silent fail for session tracking
-    }
-  }
-
-  /**
-   * Get Redis connection status
-   */
-  isRedisConnected(): boolean {
-    return this.redisConnected;
+    return foundTopics;
   }
 
   /**
    * Get storage statistics
    */
   async getStorageStats(): Promise<{
-    redisConnected: boolean;
-    inMemoryFallback: boolean;
+    databaseConnected: boolean;
+    inMemoryCache: boolean;
     activeUsers?: number;
   }> {
-    const stats = {
-      redisConnected: this.redisConnected,
-      inMemoryFallback: !this.redisConnected,
-      activeUsers: undefined as number | undefined
-    };
-
     try {
-      if (this.redis && this.redisConnected) {
-        // Count active sessions
-        const keys = await this.redis.keys('session_activity:*');
-        stats.activeUsers = keys.length;
-      }
-    } catch {
-      // Silent fail
-    }
+      // Test database connection
+      await prisma.$queryRaw`SELECT 1`;
+      
+      // Count active conversation sessions
+      const activeSessionsCount = await prisma.conversationSession.count({
+        where: {
+          updatedAt: {
+            gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+          }
+        }
+      });
 
-    return stats;
+      return {
+        databaseConnected: true,
+        inMemoryCache: true,
+        activeUsers: activeSessionsCount
+      };
+    } catch (error) {
+      console.error('Database connection test failed:', error);
+      return {
+        databaseConnected: false,
+        inMemoryCache: true,
+        activeUsers: 0
+      };
+    }
   }
 
   /**
-   * Cleanup old data
+   * Cleanup old conversations
    */
-  async cleanup(maxAge: number = 24 * 60 * 60 * 1000): Promise<void> {
-    // Redis handles TTL automatically, but clean up memory fallback
-    const cutoffTime = new Date(Date.now() - maxAge);
-    
-    // Clean up in-memory message storage
-    for (const [userId, messages] of this.memoryStorage.entries()) {
-      const recentMessages = messages.filter(msg => msg.timestamp > cutoffTime);
-      if (recentMessages.length !== messages.length) {
-        this.memoryStorage.set(userId, recentMessages);
+  async cleanup(maxAge: number = 30 * 24 * 60 * 60 * 1000): Promise<void> {
+    try {
+      const cutoffTime = new Date(Date.now() - maxAge);
+      
+      // Clean up old conversation sessions
+      const deletedSessions = await prisma.conversationSession.deleteMany({
+        where: {
+          updatedAt: {
+            lt: cutoffTime
+          }
+        }
+      });
+      
+      // Clean up in-memory cache
+      for (const [userId, messages] of this.memoryCache.entries()) {
+        const recentMessages = messages.filter(msg => msg.timestamp > cutoffTime);
+        if (recentMessages.length !== messages.length) {
+          if (recentMessages.length === 0) {
+            this.memoryCache.delete(userId);
+          } else {
+            this.memoryCache.set(userId, recentMessages);
+          }
+        }
       }
-    }
-    
-    console.log('✅ Memory cleanup completed, Redis TTL handles automatic cleanup');
-  }
-
-  /**
-   * Graceful shutdown
-   */
-  async close(): Promise<void> {
-    if (this.redis) {
-      try {
-        await this.redis.disconnect();
-        console.log('👋 Redis connection closed');
-      } catch (error) {
-        console.warn('Error closing Redis connection:', error);
-      }
+      
+      console.log(`✅ Cleanup completed: ${deletedSessions.count} old sessions removed`);
+    } catch (error) {
+      console.error('Cleanup failed:', error);
     }
   }
 } 

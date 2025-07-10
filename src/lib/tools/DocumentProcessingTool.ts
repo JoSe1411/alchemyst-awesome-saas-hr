@@ -92,15 +92,11 @@ export class DocumentProcessingTool extends Tool {
     };
 
     // In a real implementation, you would store this in a database
-    // For now, we'll use memory storage
-    await this.memoryManager.storeFileMetadata(fileId, {
-      fileId,
-      originalName: fileName,
-      size: content.length,
-      mimeType: this.getMimeType(fileName),
-      uploadedBy: 'system',
-      uploadedAt: new Date().toISOString()
-    });
+    // For now, we'll use memory storage (metadata logging only)
+    console.log(`📄 Document processed: ${fileName}`);
+    console.log(`  - Category: ${documentCategory}`);
+    console.log(`  - Size: ${content.length} characters`);
+    console.log(`  - Type: ${this.getMimeType(fileName)}`);
 
     return JSON.stringify({
       success: true,

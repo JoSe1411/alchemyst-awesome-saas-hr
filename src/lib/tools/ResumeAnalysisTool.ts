@@ -56,26 +56,12 @@ export class ResumeAnalysisTool extends Tool {
         throw new Error('candidateId is required');
       }
 
-      // Check if we have cached analysis
-      const cachedAnalysis = await this.memoryManager.getResumeAnalysis(candidateId);
-      if (cachedAnalysis) {
-        return JSON.stringify({
-          success: true,
-          cached: true,
-          analysis: cachedAnalysis,
-          message: `Retrieved cached analysis for candidate ${candidateId}`
-        });
-      }
-
       // Get resume content
       let resumeText = resumeContent;
       if (!resumeText && fileId) {
-        const fileMetadata = await this.memoryManager.getFileMetadata(fileId);
-        if (fileMetadata) {
-          // In a real implementation, you'd retrieve the file content from storage
-          // For now, we'll use the metadata
-          resumeText = `Resume file: ${fileMetadata.originalName} (${fileMetadata.size} bytes)`;
-        }
+        // In a real implementation, you'd retrieve the file content from storage
+        // For now, we'll use the fileId as a placeholder
+        resumeText = `Resume file with ID: ${fileId}`;
       }
 
       if (!resumeText) {
@@ -88,9 +74,6 @@ export class ResumeAnalysisTool extends Tool {
 
       // Perform analysis
       const analysis = await this.analyzeResume(resumeText, jobRequirements, candidateId);
-
-      // Store analysis in memory
-      await this.memoryManager.storeResumeAnalysis(candidateId, analysis);
 
       return JSON.stringify({
         success: true,
@@ -232,51 +215,10 @@ Provide honest, constructive feedback that would help in hiring decisions.
   /**
    * Helper method to get analysis summary for multiple candidates
    */
-  async getCandidateComparison(candidateIds: string[]): Promise<string> {
-    try {
-      const analyses = await Promise.all(
-        candidateIds.map(id => this.memoryManager.getResumeAnalysis(id))
-      );
-
-      const validAnalyses = analyses.filter(Boolean) as ResumeAnalysisResult[];
-      
-      if (validAnalyses.length === 0) {
-        return JSON.stringify({
-          success: false,
-          message: 'No analyses found for the provided candidate IDs'
-        });
-      }
-
-      // Sort by fit score
-      const sortedCandidates = validAnalyses.sort((a, b) => b.fitScore - a.fitScore);
-
-      return JSON.stringify({
-        success: true,
-        comparison: {
-          totalCandidates: sortedCandidates.length,
-          topCandidate: sortedCandidates[0],
-          ranking: sortedCandidates.map((candidate, index) => ({
-            rank: index + 1,
-            candidateId: candidate.candidateId,
-            fitScore: candidate.fitScore,
-            recommendation: candidate.recommendation
-          })),
-          summary: {
-            averageFitScore: Math.round(
-              sortedCandidates.reduce((sum, c) => sum + c.fitScore, 0) / sortedCandidates.length
-            ),
-            strongFits: sortedCandidates.filter(c => c.recommendation === 'STRONG_FIT').length,
-            goodFits: sortedCandidates.filter(c => c.recommendation === 'GOOD_FIT').length
-          }
-        }
-      });
-
-    } catch (error) {
-      return JSON.stringify({
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        message: 'Failed to compare candidates'
-      });
-    }
+  async getCandidateComparison(): Promise<string> {
+    return JSON.stringify({
+      success: false,
+      message: 'Candidate comparison is not available without persistent storage. Analyze candidates individually.'
+    });
   }
 } 

@@ -7,7 +7,35 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
-        
+
+// User Models
+model Manager {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  firstName String   @map("first_name") @db.VarChar(100)
+  lastName  String   @map("last_name") @db.VarChar(100)
+  email     String   @unique @db.VarChar(255)
+  company   String   @db.VarChar(255)
+  role      String   @db.VarChar(50)
+  password  String   @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@map("managers")
+}
+
+model Employee {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  firstName String   @map("first_name") @db.VarChar(100)
+  lastName  String   @map("last_name") @db.VarChar(100)
+  email     String   @unique @db.VarChar(255)
+  company   String   @db.VarChar(255)
+  role      String   @db.VarChar(50)
+  password  String   @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@map("employees")
+}
 
 model PolicyCategory {
   id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
@@ -124,5 +152,20 @@ enum ChangeType {
   ARCHIVED
   
   @@map("change_type")
+}
+
+// Conversation Management
+model ConversationSession {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  userType  String   @map("user_type") @db.VarChar(20) // "manager" or "employee"
+  title     String?  @db.VarChar(255)
+  messages  Json     @default("[]") // Stores ConversationMessage[] as JSON
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  @@map("conversation_sessions")
+  @@index([userId, userType])
+  @@index([createdAt])
 }
 

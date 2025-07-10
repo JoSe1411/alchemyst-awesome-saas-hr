@@ -21,13 +21,6 @@ import { UserRole } from '../types/index';
 import dotenv from 'dotenv';
 dotenv.config();
 
-interface RedisConfig {
-  url?: string;
-  host?: string;
-  port?: number;
-  password?: string;
-}
-
 /**
  * Clean HR Agent with LLM, conversational memory, and tool support
  * Combines enhanced memory management with LangChain tools
@@ -42,11 +35,11 @@ export class HRAgent {
   private agent: AgentExecutor | null = null;
   private isInitialized: boolean = false;
 
-  constructor(redisConfig?: RedisConfig) {
-    this.initializeComponents(redisConfig);
+  constructor() {
+    this.initializeComponents();
   }
 
-  private async initializeComponents(redisConfig?: RedisConfig): Promise<void> {
+  private async initializeComponents(): Promise<void> {
     // Initialize LLM with Mistral
     this.llm = new ChatOpenAI({
       model: process.env.MODEL_NAME,
@@ -64,7 +57,7 @@ export class HRAgent {
     });
 
     // Initialize enhanced memory manager
-    this.memoryManager = new EnhancedMemoryManager(redisConfig);
+    this.memoryManager = new EnhancedMemoryManager();
     
     // Initialize input processor
     this.inputProcessor = new InputProcessor();
@@ -246,7 +239,10 @@ Thought:{agent_scratchpad}`;
 
       // Handle file uploads first
       if (files && files.length > 0) {
-        await this.handleFileUploads(files, userContext.userId);
+        console.log(`📎 Processing ${files.length} file(s) for user: ${userContext.userId}`);
+        for (const file of files) {
+          console.log(`  - ${file.originalName} (${file.fileId})`);
+        }
       }
 
       // Update context in memory
@@ -458,17 +454,14 @@ Current Query: ${query}
   }
 
   /**
-   * Get storage stats
+   * Get storage statistics
    */
-  async getStorageStats() {
-    return this.memoryManager.getStorageStats();
-  }
-
-  /**
-   * Check if Redis is connected
-   */
-  isRedisConnected(): boolean {
-    return this.memoryManager.isRedisConnected();
+  async getStorageStats(): Promise<{
+    databaseConnected: boolean;
+    inMemoryCache: boolean;
+    activeUsers?: number;
+  }> {
+    return await this.memoryManager.getStorageStats();
   }
 
   /**
@@ -476,29 +469,6 @@ Current Query: ${query}
    */
   async cleanup(): Promise<void> {
     await this.inputProcessor.cleanup();
-    await this.memoryManager.close();
-  }
-
-  /**
-   * Handle file uploads
-   */
-  private async handleFileUploads(files: FileUpload[], userId: string): Promise<void> {
-    for (const file of files) {
-      try {
-        // Store file metadata
-        await this.memoryManager.storeFileMetadata(file.fileId, {
-          fileId: file.fileId,
-          originalName: file.originalName,
-          size: file.size,
-          mimeType: file.mimeType,
-          uploadedBy: userId,
-          uploadedAt: new Date().toISOString()
-        });
-        
-        console.log(`📎 File uploaded: ${file.originalName} (${file.fileId})`);
-      } catch (error) {
-        console.error(`Failed to process file ${file.originalName}:`, error);
-      }
-    }
+    await this.memoryManager.cleanup();
   }
 }
