@@ -169,3 +169,9 @@ model ConversationSession {
   @@index([createdAt])
 }
 
+model LoginHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  loggedInAt DateTime @default(now())
+}
+

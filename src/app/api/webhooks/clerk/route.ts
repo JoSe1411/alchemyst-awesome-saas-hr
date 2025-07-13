@@ -9,6 +9,7 @@ interface ClerkWebhookEvent {
   type: string;
   data: {
     id: string;
+    user_id: string;
     email_addresses: Array<{ email_address: string }>;
     first_name: string;
     last_name: string;
@@ -66,6 +67,9 @@ export async function POST(req: NextRequest) {
         break;
       case 'user.deleted':
         await handleUserDeleted(id);
+        break;
+      case 'session.created':
+        await handleSessionCreated(evt.data);
         break;
       default:
         console.log(`Unhandled event type: ${eventType}`);
@@ -194,3 +198,17 @@ async function handleUserDeleted(clerkId: string) {
     // Don't throw to avoid blocking other webhook processing
   }
 } 
+
+async function handleSessionCreated(sessionData: { user_id: string }) {
+  try {
+    // Create a new session record in the database
+    await prisma.loginHistory.create({
+      data: { 
+        userId: sessionData.user_id,
+      },
+    });
+    console.log('✅ User login recorded:', sessionData.user_id);
+  } catch (error) { 
+    console.error('Error recording user login:', error);
+  }
+}
