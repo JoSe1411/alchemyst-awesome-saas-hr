@@ -94,9 +94,12 @@ async function handleUserCreated(
   const email = emailAddresses[0]?.email_address;
   const { company, role, userType } = metadata || {};
 
-  if (!email || !userType) {
-    console.error('Missing required user data:', { email, userType });
-    return;
+  if (!email) {
+    throw new Error("Email is required to create user.")
+  }
+
+  if(!userType){
+     console.log("Redirect to onboarding page.");
   }
 
   try {
@@ -113,19 +116,20 @@ async function handleUserCreated(
         },
       });
       console.log('✅ Manager synced to database:', email);
-    } else if (userType === 'employee') {
-      await prisma.employee.create({
-        data: {
-          id: clerkId,
-          firstName: firstName || '',
-          lastName: lastName || '',
-          email,
-          company: (company as string) || '',
-          role: (role as string) || 'Employee',
-          password: '', // Password is managed by Clerk
-        },
-      });
-      console.log('✅ Employee synced to database:', email);
+    }
+    else if (!userType){
+       console.log('Assigning default userType as "employee"');
+       await prisma.employee.create({
+          data:{
+            id: clerkId,
+            firstName: firstName || '',
+            lastName: lastName || '',
+            email,
+            company: (company as string) || '',
+            role: (role as string) || 'Employee',
+            password: '', // Password is managed by Clerk 
+          }
+       })
     }
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'P2002') {
