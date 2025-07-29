@@ -5,7 +5,7 @@ import { enforceRateLimit } from '@/lib/rateLimit';
 const llm = new ChatGoogleGenerativeAI({
   model: process.env.GEMINI_MODEL_NAME ?? 'gemini-1.5-flash',
   apiKey: process.env.GOOGLE_API_KEY,
-  temperature: 0.6,
+  temperature: 0.8,
 });
 
 export async function POST(req: NextRequest) {
@@ -13,15 +13,17 @@ export async function POST(req: NextRequest) {
     const rate = await enforceRateLimit(req);
     if (!rate.allowed) return rate.response!;
 
-    const body = await req.json();
+    const { context } = await req.json();
 
-    const prompt = `You are Aura, an AI recruiter assistant. Draft a clear, inclusive job description in markdown using the details provided below. Use headings where appropriate. Omit sections that have no content.\n\nJob Details (JSON):\n${JSON.stringify(body, null, 2)}`;
+    const prompt = `You are Aura, an AI recruiter assistant. Generate exactly three behavioural interview questions. Respond ONLY with a numbered markdown list of the questions and nothing else.${
+      context ? `\n\nRole / Context: ${context}` : ''
+    }`;
 
     const response = await llm.invoke(prompt);
 
     return NextResponse.json({ content: response.content });
   } catch (error) {
-    console.error('JD generator error:', error);
+    console.error('Interview question generator error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
   }

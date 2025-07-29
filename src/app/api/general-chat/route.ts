@@ -1,7 +1,8 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { NextRequest, NextResponse } from 'next/server';
+import { enforceRateLimit } from '@/lib/rateLimit';
 
-// Singleton LLM instance for efficiency (Gemini 1.5 flash)
+// Singleton LLM instance for Gemini
 const llm = new ChatGoogleGenerativeAI({
   model: process.env.GEMINI_MODEL_NAME ?? 'gemini-1.5-flash',
   apiKey: process.env.GOOGLE_API_KEY,
@@ -10,6 +11,9 @@ const llm = new ChatGoogleGenerativeAI({
 
 export async function POST(req: NextRequest) {
   try {
+    const rate = await enforceRateLimit(req);
+    if (!rate.allowed) return rate.response!;
+
     const { message } = await req.json();
 
     if (!message) {

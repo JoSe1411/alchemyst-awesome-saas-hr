@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { ConversationMessage } from '@/types';
 
-interface ChatState {
+interface GeneralChatState {
   messages: ConversationMessage[];
   isLoading: boolean;
   error: string | null;
@@ -12,13 +12,12 @@ interface ChatState {
   initializeWelcomeMessage: () => void;
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
+export const useGeneralChatStore = create<GeneralChatState>((set, get) => ({
   messages: [],
   isLoading: false,
   error: null,
   isInitialized: false,
-  addMessage: (message) =>
-    set((state) => ({ messages: [...state.messages, message] })),
+  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
   setLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),
   initializeWelcomeMessage: () => {
@@ -29,7 +28,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           {
             id: 'init',
             role: 'assistant',
-            content: 'Welcome! I\'m Aura—your AI HR assistant. How can I assist you with hiring or HR needs today?',
+            content: 'Hello! I\'m Aura—your AI hiring assistant. Feel free to ask me anything from drafting job descriptions to optimizing your recruitment process.',
             timestamp: new Date(),
           },
         ],
