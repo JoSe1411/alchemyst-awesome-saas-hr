@@ -1,4 +1,5 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { localChat } from '@/lib/localModel';
 import { NextRequest, NextResponse } from 'next/server';
 import { enforceRateLimit } from '@/lib/rateLimit';
 
@@ -17,9 +18,16 @@ export async function POST(req: NextRequest) {
 
     const prompt = `You are Aura, an AI recruiter assistant. Draft a clear, inclusive job description in markdown using the details provided below. Use headings where appropriate. Omit sections that have no content.\n\nJob Details (JSON):\n${JSON.stringify(body, null, 2)}`;
 
-    const response = await llm.invoke(prompt);
+    let reply: string;
+    try {
+      const completion = await llm.invoke(prompt);
+      reply = completion.content as string;
+    } catch (err) {
+      console.warn('Gemini failed, falling back to local model:', err);
+      reply = await localChat(prompt);
+    }
 
-    return NextResponse.json({ content: response.content });
+    return NextResponse.json({ content: reply });
   } catch (error) {
     console.error('JD generator error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';

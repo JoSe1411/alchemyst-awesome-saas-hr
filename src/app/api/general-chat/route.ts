@@ -1,4 +1,5 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { localChat } from '@/lib/localModel';
 import { NextRequest, NextResponse } from 'next/server';
 import { enforceRateLimit } from '@/lib/rateLimit';
 
@@ -7,6 +8,7 @@ const llm = new ChatGoogleGenerativeAI({
   model: process.env.GEMINI_MODEL_NAME ?? 'gemini-1.5-flash',
   apiKey: process.env.GOOGLE_API_KEY,
   temperature: 0.8,
+  maxRetries: 0
 });
 
 export async function POST(req: NextRequest) {
@@ -19,13 +21,28 @@ export async function POST(req: NextRequest) {
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
-
-    const completion = await llm.invoke(message);
+   
+    let reply: string;
+    try {
+      if (globalThis.geminiQuotaExceeded) {
+        throw new Error('gemini_quota');   // jump straight to fallback
+      }  
+      const completion = await llm.invoke(message);
+      reply = completion.content as string;
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        if (err.message.includes('Too Many Requests') || err.message === 'gemini_quota') {
+          globalThis.geminiQuotaExceeded = true; // remember for the rest of the day
+        }
+      }
+      console.warn('Gemini failed, using local model:', err);
+      reply = await localChat(message);
+    }
 
     return NextResponse.json({
       id: Date.now().toString(),
       role: 'assistant',
-      content: completion.content as string,
+      content: reply,
       timestamp: new Date(),
     });
   } catch (error) {

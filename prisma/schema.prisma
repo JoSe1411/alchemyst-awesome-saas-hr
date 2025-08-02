@@ -19,6 +19,7 @@ model Manager {
   password  String   @db.VarChar(255)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  department String?  @db.VarChar(100) 
   
   @@map("managers")
 }
@@ -33,6 +34,7 @@ model Employee {
   password  String   @db.VarChar(255)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  department String?  @db.VarChar(100) 
   
   @@map("employees")
 }

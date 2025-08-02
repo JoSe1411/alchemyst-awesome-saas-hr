@@ -91,7 +91,6 @@ export class DocumentProcessingTool extends Tool {
       processedAt: new Date().toISOString()
     };
 
-    // In a real implementation, you would store this in a database
     // For now, we'll use memory storage (metadata logging only)
     console.log(`📄 Document processed: ${fileName}`);
     console.log(`  - Category: ${documentCategory}`);
@@ -115,7 +114,6 @@ export class DocumentProcessingTool extends Tool {
       throw new Error('searchQuery is required for search action');
     }
 
-    // In a real implementation, you would search through a vector database
     // For now, we'll simulate search results
     const mockResults = [
       {
