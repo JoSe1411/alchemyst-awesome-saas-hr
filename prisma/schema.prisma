@@ -10,7 +10,7 @@ datasource db {
 
 // User Models
 model Manager {
-  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  id        String   @id @default(cuid()) 
   firstName String   @map("first_name") @db.VarChar(100)
   lastName  String   @map("last_name") @db.VarChar(100)
   email     String   @unique @db.VarChar(255)
@@ -20,6 +20,10 @@ model Manager {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   department String?  @db.VarChar(100) 
+
+  // Relations
+  jobDescriptions JobDescription[]
+  interviewKits  InterviewKit[]
   
   @@map("managers")
 }
@@ -37,6 +41,37 @@ model Employee {
   department String?  @db.VarChar(100) 
   
   @@map("employees")
+}
+
+/// Generated Job Descriptions that managers draft via the AI assistant.
+model JobDescription {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  managerId String?  @map("manager_id")  
+  title     String   @db.VarChar(255)
+  markdown  String   @db.Text
+  metadata  Json     @default("{}") // stores the original form inputs as JSON
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  manager   Manager? @relation(fields: [managerId], references: [id])
+
+  @@map("job_descriptions")
+  @@index([managerId])
+}
+
+/// Generated interview question sets.
+model InterviewKit {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  managerId String?  @map("manager_id")
+  context   String?  @db.Text
+  questions String   @db.Text // markdown list
+  createdAt DateTime @default(now()) @map("created_at")
+
+  manager   Manager? @relation(fields: [managerId], references: [id])
+
+  @@map("interview_kits")
+  @@index([managerId])
 }
 
 model PolicyCategory {
