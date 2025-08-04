@@ -3,15 +3,23 @@
 import React, { useState } from 'react';
 import { Send, LoaderCircle } from 'lucide-react';
 import { useChatStore } from '@/stores/chatStore';
+import { useRateLimitStore } from '@/stores/rateLimitStore';
 import { v4 as uuidv4 } from 'uuid';
 
 const ChatInput: React.FC = () => {
   const [input, setInput] = useState('');
   const { addMessage, setLoading, setError, isLoading } = useChatStore();
+  const resetAt = useRateLimitStore((s) => s.resetAt);
+  const isRateLimited = !!resetAt && Date.now() < resetAt;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
+
+    if (isRateLimited) {
+      setError('You are sending requests too quickly. Please wait a moment.');
+      return;
+    }
 
     const userMessage = {
       id: uuidv4(),
@@ -69,12 +77,12 @@ const ChatInput: React.FC = () => {
             handleSubmit(e as unknown as React.FormEvent);
           }
         }}
-        disabled={isLoading}
+        disabled={isLoading || isRateLimited}
       />
       <button
         type="submit"
         className="p-2 rounded-full bg-blue-500 text-white disabled:bg-blue-300 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors"
-        disabled={isLoading || !input.trim()}
+        disabled={isLoading || !input.trim() || isRateLimited}
       >
         {isLoading ? (
           <LoaderCircle className="w-5 h-5 animate-spin" />

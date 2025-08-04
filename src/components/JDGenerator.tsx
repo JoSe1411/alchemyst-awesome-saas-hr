@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { useRightPanelStore } from '@/stores/rightPanelStore';
 import { useGeneralChatStore } from '@/stores/generalChatStore';
+import { useDemoUsageStore } from '@/stores/demoUsageStore';
+import { useAuth } from '@clerk/nextjs';
 
 interface JDForm {
   roleTitle: string;
@@ -31,6 +33,11 @@ const JDGenerator: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const remainingDemo = useDemoUsageStore((s) => s.remaining);
+  const decrementDemo = useDemoUsageStore((s) => s.decrement);
+
+  const { isSignedIn } = useAuth();
+
   const [result, setResult] = useState<string | null>(null);
 
   const handleChange = (field: keyof JDForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -39,6 +46,11 @@ const JDGenerator: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSignedIn && remainingDemo <= 0) {
+      setError('Demo limit reached. Create a free account to continue.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -52,6 +64,9 @@ const JDGenerator: React.FC = () => {
       if (!resp.ok) throw new Error('Failed to generate JD');
       const data = await resp.json();
       setResult(data.content);
+
+      // decrement demo uses for guests only on successful generation
+      if (!isSignedIn) decrementDemo();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(msg);
@@ -156,10 +171,17 @@ const JDGenerator: React.FC = () => {
         <textarea value={form.aboutCompany} onChange={handleChange('aboutCompany')} className="w-full p-2 rounded border" rows={2} />
       </div>
 
+      {/* Demo usage counter / CTA */}
+      {!isSignedIn && (
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Demo uses remaining: {remainingDemo}
+        </p>
+      )}
+
       {/* Buttons */}
       {error && <p className="text-red-500 text-sm">{error}</p>}
       <div className="flex gap-3 mt-2">
-        <button type="submit" disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+        <button type="submit" disabled={loading || (!isSignedIn && remainingDemo <= 0)} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
           {loading ? 'Generating…' : 'Generate JD'}
         </button>
         <button type="button" onClick={() => setMode('chat')} className="bg-gray-500 text-white px-4 py-2 rounded">

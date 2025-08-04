@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { useRightPanelStore } from '@/stores/rightPanelStore';
 import { useGeneralChatStore } from '@/stores/generalChatStore';
+import { useDemoUsageStore } from '@/stores/demoUsageStore';
+import { useAuth } from '@clerk/nextjs';
 
 const InterviewQuestionGenerator: React.FC = () => {
   const { setMode } = useRightPanelStore();
@@ -13,9 +15,18 @@ const InterviewQuestionGenerator: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
+  const remainingDemo = useDemoUsageStore((s) => s.remaining);
+  const decrementDemo = useDemoUsageStore((s) => s.decrement);
+
+  const { isSignedIn } = useAuth();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
+    if (!isSignedIn && remainingDemo <= 0) {
+      setError('Demo limit reached. Sign up for unlimited questions.');
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -36,6 +47,7 @@ const InterviewQuestionGenerator: React.FC = () => {
       }
       const data = await resp.json();
       setResult(data.content as string);
+      if (!isSignedIn) decrementDemo();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(msg);
@@ -109,10 +121,13 @@ const InterviewQuestionGenerator: React.FC = () => {
         />
       </div>
       {error && <p className="text-red-500 text-sm">{error}</p>}
+      {!isSignedIn && (
+        <p className="text-sm text-gray-600 dark:text-gray-400">Demo uses remaining: {remainingDemo}</p>
+      )}
       <div className="flex gap-3 mt-2">
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || (!isSignedIn && remainingDemo <= 0)}
           className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
         >
           {loading ? 'Generating…' : 'Generate Questions'}
