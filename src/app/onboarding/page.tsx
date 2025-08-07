@@ -9,6 +9,8 @@ import { ThreeBackground } from '@/components/ThreeBackground';
 // This form is to collect the missing information caused by Clerk Sign up using google.
 interface missinginformation {
   userType: "manager" | "employee",
+  company: string,
+  role: string,
   department: string,
 }
 
@@ -19,6 +21,8 @@ export default function OnboardingPage() {
   
   const [formData, setFormData] = useState<missinginformation>({
     userType: "employee", // default
+    company: "",
+    role: "",
     department: "",
   });
   
@@ -47,16 +51,19 @@ export default function OnboardingPage() {
         },
         body: JSON.stringify({
           userId: user?.id,
-          ...formData
+          userType: formData.userType,
+          company: formData.company,
+          role: formData.role,
+          department: formData.department
         }),
       });
 
       if (response.ok) {
-        // Redirect based on user type
+        // Redirect based on user type with proper user ID
         if (formData.userType === 'manager') {
-          router.push('/dashboard/manager');
+          router.push(`/dashboard/manager/${user?.id}`);
         } else {
-          router.push('/dashboard/employee');
+          router.push(`/dashboard/employee/${user?.id}`);
         }
       } else {
         const data = await response.json();
@@ -148,20 +155,53 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
+              {/* Company Field */}
+              <div className="space-y-2">
+                <label htmlFor="company" className="text-sm font-medium text-gray-700">
+                  Company Name
+                </label>
+                <input
+                  type="text"
+                  id="company"
+                  name="company"
+                  required
+                  value={formData.company}
+                  onChange={handleInputChange}
+                  placeholder="Enter your company name"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white text-gray-900"
+                />
+              </div>
+
+              {/* Role Field */}
+              <div className="space-y-2">
+                <label htmlFor="role" className="text-sm font-medium text-gray-700">
+                  Job Title
+                </label>
+                <input
+                  type="text"
+                  id="role"
+                  name="role"
+                  required
+                  value={formData.role}
+                  onChange={handleInputChange}
+                  placeholder="Enter your job title"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white text-gray-900"
+                />
+              </div>
+
               {/* Department Field */}
               <div className="space-y-2">
                 <label htmlFor="department" className="text-sm font-medium text-gray-700">
-                  Department
+                  Department (Optional)
                 </label>
                 <select
                   id="department"
                   name="department"
-                  required
                   value={formData.department}
                   onChange={handleInputChange}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white text-gray-900"
                 >
-                  <option value="">Select your department</option>
+                  <option value="">Select your department (optional)</option>
                   <option value="Engineering">Engineering</option>
                   <option value="HR">Human Resources</option>
                   <option value="Sales">Sales</option>
@@ -176,7 +216,7 @@ export default function OnboardingPage() {
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isLoading || !formData.department}
+                disabled={isLoading || !formData.company || !formData.role}
                 className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold text-lg h-12 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isLoading ? (

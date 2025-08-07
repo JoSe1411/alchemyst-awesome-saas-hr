@@ -36,8 +36,8 @@ export default function Home() {
             <a href="#contact" className="text-white/90 hover:text-white transition-colors text-sm font-medium">Contact</a>
           </nav>
           <div className="flex items-center space-x-4">
-            <a href="/login" className="text-white/90 hover:text-white transition-colors text-sm font-medium">Login</a>
-            <button className="bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-blue-700 transition-colors">Explore</button>
+            <a href="/auth/sign-in" className="text-white/90 hover:text-white transition-colors text-sm font-medium">Login</a>
+            <a href="/auth/sign-up" className="bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-blue-700 transition-colors">Sign up</a>
           </div>
         </header>
 
@@ -115,4 +115,4 @@ export default function Home() {
       </div>
     </div>
   );
-}
+} 

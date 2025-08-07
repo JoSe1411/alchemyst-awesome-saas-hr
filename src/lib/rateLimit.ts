@@ -8,7 +8,7 @@ const redis = Redis.fromEnv();
 // Configure a simple fixed-window limiter (e.g. 60 requests per 60 seconds per IP)
 const ratelimit = new Ratelimit({
   redis,
-  limiter: Ratelimit.fixedWindow(20, '1 m'),
+  limiter: Ratelimit.fixedWindow(10, '1 m'),
   analytics: true,
 });
 

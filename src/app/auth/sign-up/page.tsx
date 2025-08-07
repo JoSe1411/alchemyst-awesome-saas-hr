@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useSignUp } from '@clerk/nextjs';
+import { useSignUp, useClerk, useAuth } from '@clerk/nextjs';
 import { Eye, EyeOff, Mail, Lock, User, Building, ArrowRight, Building2, Check, AlertCircle } from 'lucide-react';
 
 export default function SignUpPage() {
   const router = useRouter();
   const { signUp, setActive, isLoaded } = useSignUp();
+  const { signOut } = useClerk();
+  const { isSignedIn, userId } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -26,6 +28,21 @@ export default function SignUpPage() {
   const [error, setError] = useState('');
   const [verificationStep, setVerificationStep] = useState(false);
   const [code, setCode] = useState('');
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [verificationError, setVerificationError] = useState(false);
+
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      setIsSessionActive(true);
+    }
+  }, [isLoaded, isSignedIn]);
+
+  const handleSignOutAndStartFresh = async () => {
+    await signOut();
+    setIsSessionActive(false);
+    // Optionally, you can reload the page to ensure a clean state
+    window.location.reload();
+  };
 
   const calculatePasswordStrength = (password: string) => {
     let strength = 0;
@@ -49,6 +66,7 @@ export default function SignUpPage() {
       const signUpAttempt = await signUp.create({
         emailAddress: formData.email,
         password: formData.password,
+        username: formData.email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '_'),
         firstName: formData.firstName,
         lastName: formData.lastName,
         unsafeMetadata: {
@@ -95,11 +113,14 @@ export default function SignUpPage() {
       if (completeSignUp.status === 'complete') {
         await setActive({ session: completeSignUp.createdSessionId });
         
-        // Redirect based on role
+        // Get the user ID from the completed signup
+        const userId = completeSignUp.createdUserId;
+        
+        // Redirect based on role with correct paths
         if (formData.role === 'Manager') {
-          router.push('/manager/dashboard');
+          router.push(`/dashboard/manager/${userId}`);
         } else {
-          router.push('/employee/dashboard');
+          router.push(`/dashboard/employee/${userId}`);
         }
       } else {
         setError('Verification incomplete. Please try again.');
@@ -109,9 +130,35 @@ export default function SignUpPage() {
       let errorMessage = 'Verification failed. Please try again.';
       
       if (err && typeof err === 'object' && 'errors' in err) {
-        const errors = (err as { errors: { message: string }[] }).errors;
-        if (errors && errors.length > 0 && errors[0].message) {
-          errorMessage = errors[0].message;
+        const errors = (err as { errors: { message: string; code?: string }[] }).errors;
+        if (errors && errors.length > 0) {
+          const firstError = errors[0];
+          // Handle specific verification errors
+          if (firstError.code === 'verification_already_verified') {
+            // If verification is already complete, try to complete the signup
+            try {
+              const currentSignUp = signUp;
+              if (currentSignUp.status === 'complete') {
+                await setActive({ session: currentSignUp.createdSessionId });
+                const userId = currentSignUp.createdUserId;
+                
+                // Redirect based on role with correct paths
+                if (formData.role === 'Manager') {
+                  router.push(`/dashboard/manager/${userId}`);
+                } else {
+                  router.push(`/dashboard/employee/${userId}`);
+                }
+                return;
+              }
+            } catch (activeError) {
+              console.error('Error setting active session:', activeError);
+            }
+            // If we can't complete the signup, set verification error and show sign-in option
+            setVerificationError(true);
+            errorMessage = 'Verification already completed. Please sign in instead.';
+          } else if (firstError.message) {
+            errorMessage = firstError.message;
+          }
         }
       }
       
@@ -150,6 +197,36 @@ export default function SignUpPage() {
     if (strength <= 3) return 'Medium';
     return 'Strong';
   };
+
+  // Session Active UI
+  if (isSessionActive) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center">
+          <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-100">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">You are already signed in</h1>
+            <p className="text-gray-600 mb-6">
+              It looks like you have an active session. You can either proceed to your dashboard or sign out to create a new account.
+            </p>
+            <div className="space-y-4">
+              <button
+                onClick={() => router.push(`/dashboard/manager/${userId}`)} // Adjust the path as needed
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-4 rounded-xl font-medium hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200"
+              >
+                Go to Dashboard
+              </button>
+              <button
+                onClick={handleSignOutAndStartFresh}
+                className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-xl font-medium hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2 transition-all duration-200"
+              >
+                Sign Out & Start Fresh
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Verification step UI
   if (verificationStep) {
@@ -204,10 +281,10 @@ export default function SignUpPage() {
 
             <div className="mt-6 text-center">
               <button
-                onClick={() => setVerificationStep(false)}
+                onClick={() => verificationError ? router.push('/auth/sign-in') : setVerificationStep(false)}
                 className="text-sm text-blue-600 hover:text-blue-500 font-medium"
               >
-                ← Back to registration
+                {verificationError ? '← Go to sign in' : '← Back to registration'}
               </button>
             </div>
           </div>
@@ -447,6 +524,9 @@ export default function SignUpPage() {
                 </div>
               )}
             </div>
+
+            {/* CAPTCHA Element */}
+            <div id="clerk-captcha"></div>
 
             {/* Terms and Conditions */}
             <div className="flex items-center">

@@ -16,26 +16,26 @@ model Manager {
   email     String   @unique @db.VarChar(255)
   company   String   @db.VarChar(255)
   role      String   @db.VarChar(50)
-  password  String   @db.VarChar(255)
+  // Note: Password is managed by Clerk authentication service
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   department String?  @db.VarChar(100) 
 
   // Relations
-  jobDescriptions JobDescription[]
-  interviewKits  InterviewKit[]
+  // jobDescriptions JobDescription[] // Temporarily removed
+  // interviewKits  InterviewKit[] // Temporarily removed
   
   @@map("managers")
 }
 
 model Employee {
-  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  id        String   @id @default(cuid())
   firstName String   @map("first_name") @db.VarChar(100)
   lastName  String   @map("last_name") @db.VarChar(100)
   email     String   @unique @db.VarChar(255)
   company   String   @db.VarChar(255)
   role      String   @db.VarChar(50)
-  password  String   @db.VarChar(255)
+  // Note: Password is managed by Clerk authentication service
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   department String?  @db.VarChar(100) 
@@ -46,15 +46,15 @@ model Employee {
 /// Generated Job Descriptions that managers draft via the AI assistant.
 model JobDescription {
   id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  managerId String?  @map("manager_id")  
+  managerId String?  @map("manager_id")  // Stores Clerk userId directly
   title     String   @db.VarChar(255)
   markdown  String   @db.Text
   metadata  Json     @default("{}") // stores the original form inputs as JSON
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // Relations
-  manager   Manager? @relation(fields: [managerId], references: [id])
+  // Relations removed temporarily to allow Clerk userId storage
+  // manager   Manager? @relation(fields: [managerId], references: [id])
 
   @@map("job_descriptions")
   @@index([managerId])
@@ -63,12 +63,13 @@ model JobDescription {
 /// Generated interview question sets.
 model InterviewKit {
   id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  managerId String?  @map("manager_id")
+  managerId String?  @map("manager_id")  // Stores Clerk userId directly
   context   String?  @db.Text
   questions String   @db.Text // markdown list
   createdAt DateTime @default(now()) @map("created_at")
 
-  manager   Manager? @relation(fields: [managerId], references: [id])
+  // Relations removed temporarily to allow Clerk userId storage
+  // manager   Manager? @relation(fields: [managerId], references: [id])
 
   @@map("interview_kits")
   @@index([managerId])
@@ -91,6 +92,11 @@ model Policy {
   id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   title        String    @db.VarChar(255)
   categoryId   String    @map("category_id") @db.Uuid
+  
+  // NEW: Company isolation fields
+  companyId    String    @map("company_id") @db.VarChar(255)
+  managerId    String    @map("manager_id") @db.VarChar(255)
+  
   version      Int       @default(1)
   content      String    @db.Text
   summary      String?   @db.Text
@@ -111,7 +117,11 @@ model Policy {
   access       PolicyAccess[]
   changes      PolicyChange[]
   
-  @@unique([title, version])
+  // Updated constraints for company isolation
+  @@unique([title, version, companyId]) // Company-specific unique constraint
+  @@index([companyId]) // For filtering policies by company
+  @@index([managerId]) // For filtering policies by manager
+  @@index([companyId, categoryId]) // For category filtering within company
   @@map("policies")
 }
 
@@ -210,5 +220,48 @@ model LoginHistory {
   id        String   @id @default(cuid())
   userId    String
   loggedInAt DateTime @default(now())
+}
+
+// Company Profile for enhanced JD generation
+model CompanyProfile {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  managerId       String   @unique @map("manager_id") // Each manager has one company profile
+  
+  // Basic Company Info
+  companyName     String   @map("company_name") @db.VarChar(255)
+  industry        String   @db.VarChar(100)
+  companySize     String   @map("company_size") @db.VarChar(50) // "1-10", "11-50", "51-200", etc.
+  website         String?  @db.VarChar(255)
+  location        String   @db.VarChar(255)
+  
+  // Brand Voice & Style
+  toneStyle       String   @default("professional") @map("tone_style") @db.VarChar(50) // "professional", "casual", "technical", "creative"
+  writingStyle    String   @default("formal") @map("writing_style") @db.VarChar(50) // "formal", "conversational", "concise", "detailed"
+  companyVoice    String?  @map("company_voice") @db.Text // Custom voice guidelines
+  
+  // Company Culture & Values
+  coreValues      String[] @map("core_values") // Array of company values
+  companyMission  String?  @map("company_mission") @db.Text
+  workCulture     String?  @map("work_culture") @db.Text // "remote-first", "hybrid", "collaborative", etc.
+  
+  // Standard Benefits & Perks
+  standardBenefits String[] @map("standard_benefits") // Healthcare, 401k, etc.
+  uniquePerks     String[] @map("unique_perks") // Unlimited PTO, stipends, etc.
+  workingHours    String?  @map("working_hours") @db.VarChar(100)
+  
+  // Career Development
+  careerProgression Json    @default("{}") @map("career_progression") // Role hierarchy definitions
+  learningBudget   String?  @map("learning_budget") @db.VarChar(100)
+  mentorshipProgram Boolean @default(false) @map("mentorship_program")
+  
+  // JD Template Preferences
+  preferredTemplate String  @default("standard") @map("preferred_template") @db.VarChar(50)
+  requireApproval  Boolean @default(false) @map("require_approval")
+  autoIncludeBenefits Boolean @default(true) @map("auto_include_benefits")
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  @@map("company_profiles")
 }
 

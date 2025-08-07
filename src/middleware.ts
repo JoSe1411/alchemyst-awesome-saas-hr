@@ -1,7 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient();
+import { NextRequest, NextResponse } from 'next/server';
 
 const isPublicRoute = createRouteMatcher([
   '/',
@@ -12,32 +10,30 @@ const isPublicRoute = createRouteMatcher([
   '/onboarding(.*)'
 ])
 
-export default clerkMiddleware(async (auth, req) => {
-  const pathName = req.nextUrl.pathname;
+export default clerkMiddleware(async (auth, req: NextRequest) => {
+  const { userId } = await auth();
 
-  if (!isPublicRoute(req)) {
-    await auth.protect()
+  // If the user is signed in and trying to access the homepage, redirect them to their dashboard
+  if (userId && req.nextUrl.pathname === '/') {
+    // Redirect to manager dashboard by default - the dashboard page will handle onboarding checks
+    const dashboardUrl = new URL(`/dashboard/manager/${userId}`, req.url);
+    return NextResponse.redirect(dashboardUrl);
   }
 
-  // Adding onboarding logic 
-  if(!isPublicRoute(req) && pathName !== '/onboarding'){
-         const {userId} = await auth();
-
-         if(userId){
-         // Checking if the  userId is present in the database or not.
-         const user = await prisma.employee.findUnique({ where: { id: userId } }) ||
-                      await prisma.manager.findUnique({ where: { id: userId } });
-
-
-        // If the user does not exist in the database, then the redirect to onboarding page
-        if(!user){
-          return Response.redirect(new URL('/onboarding',req.url));
-        }
-        
-        }
-
+  // Redirect Clerk's default sign-up to our custom sign-up form
+  if (req.nextUrl.pathname === '/sign-up' || req.nextUrl.pathname === '/signup') {
+    const customSignUpUrl = new URL('/auth/sign-up', req.url);
+    return NextResponse.redirect(customSignUpUrl);
   }
-})
+
+  // Note: Onboarding check is now handled by the dashboard pages themselves
+  // to avoid Prisma client issues in middleware
+
+  // If the user is not signed in and trying to access a protected route, redirect them to the sign-in page
+  if (!isPublicRoute(req) && !userId) {
+    return (await auth()).redirectToSignIn();
+  }
+});
 
 
 export const config = {

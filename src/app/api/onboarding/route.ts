@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 const prisma = new PrismaClient;
-import {auth} from "@clerk/nextjs/server"
+import { auth, currentUser } from "@clerk/nextjs/server"
 
 export async function POST(req: NextRequest) {
     try {
@@ -11,18 +11,40 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       
-      const { userType, department } = await req.json();
+      const { userType, company, role, department } = await req.json();
       
-      // Simple update based on userType
+      // Get user data from Clerk
+      const user = await currentUser();
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+      
+      // Create user based on userType with all the collected information
       if (userType === 'manager') {
-        await prisma.manager.update({
-          where: { id: userId },
-          data: { department }
+        await prisma.manager.create({
+          data: { 
+            id: userId,
+            firstName: user.firstName || '',
+            lastName: user.lastName || '',
+            email: user.emailAddresses[0]?.emailAddress || '',
+            company,
+            role,
+            department,
+            password: '' // Password is managed by Clerk
+          }
         });
       } else {
-        await prisma.employee.update({
-          where: { id: userId },
-          data: { department }
+        await prisma.employee.create({
+          data: { 
+            id: userId,
+            firstName: user.firstName || '',
+            lastName: user.lastName || '',
+            email: user.emailAddresses[0]?.emailAddress || '',
+            company,
+            role,
+            department,
+            password: '' // Password is managed by Clerk
+          }
         });
       }
       

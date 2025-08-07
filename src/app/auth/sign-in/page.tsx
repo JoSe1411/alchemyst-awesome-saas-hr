@@ -3,12 +3,14 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useSignIn } from '@clerk/nextjs';
+import { useSignIn, useAuth } from '@clerk/nextjs';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Building2 } from 'lucide-react';
+import { useEffect } from 'react';
 
 export default function SignInPage() {
   const router = useRouter();
   const { signIn, setActive, isLoaded } = useSignIn();
+  const { isSignedIn, userId } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
@@ -17,6 +19,26 @@ export default function SignInPage() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Redirect if already signed in
+  useEffect(() => {
+    if (isSignedIn && userId) {
+      // Redirect directly to dashboard - the dashboard page will handle onboarding checks
+      router.push(`/dashboard/manager/${userId}`);
+    }
+  }, [isSignedIn, userId, router]);
+
+  // Don't render the form if user is already signed in
+  if (isSignedIn) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Redirecting to your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,10 +54,10 @@ export default function SignInPage() {
         password: formData.password,
       });
 
-      // If sign-in is complete, set the active session and redirect
+      // If sign-in is complete, set the active session
       if (signInAttempt.status === 'complete') {
         await setActive({ session: signInAttempt.createdSessionId });
-        router.push('/chat');
+        // The useEffect will handle the redirect after the session is active
       } else {
         // Handle other statuses (e.g., needs verification)
         console.error('Sign-in incomplete:', signInAttempt.status);

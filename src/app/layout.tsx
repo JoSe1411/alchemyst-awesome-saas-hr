@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from '@clerk/nextjs';
 import "./globals.css";
+import RateLimitBanner from "@/components/RateLimitBanner";
+import AuthBanner from "@/components/AuthBanner";
+import SessionProvider from "@/components/SessionProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,7 +32,16 @@ export default function RootLayout({
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         >
-          {children}
+          <SessionProvider>
+            {/* Auth prompt banner for unsigned users */}
+            <AuthBanner />
+
+            {/* Global rate-limit banner */}
+            {/* Placed here so it renders on every page without manual inclusion */}
+            {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+            <RateLimitBanner />
+            {children}
+          </SessionProvider>
         </body>
       </html>
     </ClerkProvider>

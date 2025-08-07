@@ -112,7 +112,8 @@ export class PolicyChunkService {
   async similaritySearch(
     query: string,
     limit: number = 5,
-    similarityThreshold: number = 0.7
+    similarityThreshold: number = 0.7,
+    companyId?: string // NEW: Add company filtering
   ): Promise<SimilaritySearchResult[]> {
     try {
       // Generate embedding for the query
@@ -148,6 +149,7 @@ export class PolicyChunkService {
         JOIN policies p ON pc.policy_id = p.id
         JOIN policy_categories cat ON p.category_id = cat.id
         WHERE 1 - (pc.embedding <=> ${JSON.stringify(queryEmbedding)}::vector) > ${similarityThreshold}
+        ${companyId ? `AND p.company_id = ${companyId}` : ''}
         ORDER BY similarity DESC
         LIMIT ${limit}
       `;

@@ -1,7 +1,8 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { localChat } from '@/lib/localModel';
 import { NextRequest, NextResponse } from 'next/server';
-import { enforceRateLimit } from '@/lib/rateLimit';
+import { auth } from '@clerk/nextjs/server';
+import { PrismaClient } from '@prisma/client';
 
 const llm = new ChatGoogleGenerativeAI({
   model: process.env.GEMINI_MODEL_NAME ?? 'gemini-1.5-flash',
@@ -11,9 +12,6 @@ const llm = new ChatGoogleGenerativeAI({
 
 export async function POST(req: NextRequest) {
   try {
-    const rate = await enforceRateLimit(req);
-    if (!rate.allowed) return rate.response!;
-
     const { context } = await req.json();
 
     const prompt = `You are Aura, an AI recruiter assistant. Generate exactly three behavioural interview questions. Respond ONLY with a numbered markdown list of the questions and nothing else.${
@@ -27,6 +25,23 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       console.warn('Gemini failed, falling back to local model:', err);
       reply = await localChat(prompt);
+    }
+
+    // Persist for authenticated users
+    const { userId } = await auth();
+    if (userId) {
+      try {
+        const prisma = new PrismaClient();
+        await prisma.interviewKit.create({
+          data: {
+            managerId: userId,
+            context: context ?? null,
+            questions: reply,
+          },
+        });
+      } catch (err) {
+        console.error('Failed to persist interview kit:', err);
+      }
     }
 
     return NextResponse.json({ content: reply });

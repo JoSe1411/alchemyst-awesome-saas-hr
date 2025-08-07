@@ -9,6 +9,7 @@ interface ToolInput {
   query?: string;
   policyId?: string;
   category?: string;
+  companyId?: string; // NEW: Add company filtering
 }
 
 interface PolicyResult {
@@ -83,18 +84,23 @@ export class PolicySearchTool extends Tool {
    * Search through HR policies using vector similarity
    */
   private async searchPolicies(input: ToolInput): Promise<string> {
-    const { query, category } = input;
+    const { query, category, companyId } = input;
 
     if (!query) {
       throw new Error('query is required for search action');
     }
 
+    if (!companyId) {
+      throw new Error('companyId is required for search action');
+    }
+
     try {
-      // Perform vector similarity search on policy chunks
+      // Perform vector similarity search on policy chunks with company filtering
       const searchResults = await this.policyChunkService.similaritySearch(
         query,
         10, // Get more chunks initially
-        0.6  // Lower threshold for broader results
+        0.6, // Lower threshold for broader results
+        companyId // NEW: Pass company ID for filtering
       );
 
       // Group results by policy and calculate relevance scores

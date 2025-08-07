@@ -263,7 +263,7 @@ Thought:{agent_scratchpad}`;
       await this.memoryManager.addMessage(userMessage, userContext.userId);
 
       // The ReAct agent logic has been removed in favor of a more reliable direct LLM call.
-      const responseMessage = await this.processWithBasicLLM(input, userContext, inputType, userMessage);
+      const responseMessage = await this.processWithBasicLLM(input, userContext, inputType);
 
       await this.memoryManager.addMessage(responseMessage, userContext.userId);
       return responseMessage;
@@ -280,72 +280,134 @@ Thought:{agent_scratchpad}`;
   private async processWithBasicLLM(
     input: string,
     userContext: UserContext,
-    inputType: 'text' | 'voice' | 'image' | 'file' = 'text',
-    userMessage?: ConversationMessage
+    inputType: 'text' | 'voice' | 'image' | 'file' = 'text'
   ): Promise<ConversationMessage> {
-    // Process input
-    const processedInput = await this.inputProcessor.process(input, inputType);
+    try {
+      // Get conversation history
+      const conversationHistory = await this.memoryManager.getConversationHistory(userContext.userId, 10);
     
-    // Retrieve relevant documents
-    const relevantDocs = await this.vectorStore.similaritySearch(processedInput.text, 5);
-    
-    // Debug logging
-    console.log(`🔍 Query: "${processedInput.text}"`);
-    console.log(`📚 Found ${relevantDocs.length} relevant documents:`);
-    relevantDocs.forEach((doc, index) => {
-      console.log(`  ${index + 1}. Title: ${doc.metadata.title || 'Unknown'}`);
-      console.log(`     Source: ${doc.metadata.source || 'Unknown'}`);
-      console.log(`     Content preview: ${doc.pageContent.substring(0, 100)}...`);
-    });
-    
-    const documentContext = relevantDocs
-      .map(doc => `Title: ${doc.metadata.title}\nContent: ${doc.pageContent}`)
-      .join('\n\n---\n\n');
+      // Get relevant documents from vector store
+      const relevantDocs = await this.vectorStore.similaritySearch(input, 3);
+      const documentContext = relevantDocs.map(doc => doc.pageContent).join('\n\n');
 
-    // Debug document context
-    console.log(`📄 Document context length: ${documentContext.length} characters`);
-    if (documentContext.length === 0) {
-      console.warn('⚠️ No document context found - LLM will rely on general knowledge');
-    }
+      // NEW: Get relevant company policies for this query
+      const policyContext = await this.getRelevantPolicyContext(input, userContext);
 
-    // Get conversation context
-    const conversationHistory = await this.memoryManager.getConversationHistory(userContext.userId, 8);
+      // Construct enhanced prompt with policy context
+      const prompt = this.constructEnhancedPrompt(input, userContext, documentContext, policyContext, conversationHistory);
 
-    // Build prompt
-    const prompt = this.constructPrompt(
-      processedInput.text,
-      userContext,
-      documentContext,
-      conversationHistory
-    );
-
-    // Get LLM response
+      // Get response from LLM
     const response = await this.llm.invoke(prompt);
+      const responseContent = response.content as string;
 
-    return {
+      const responseMessage: ConversationMessage = {
       id: this.generateMessageId(),
       role: 'assistant',
-      content: response.content as string,
+        content: responseContent,
       timestamp: new Date(),
       metadata: {
         inputType,
-        sourceDocuments: relevantDocs.map((doc) => doc.metadata.source),
-        processingTime: userMessage ? Date.now() - userMessage.timestamp.getTime() : 0,
-        agentMode: 'basic',
-        confidence: processedInput.confidence,
-        wordCount: processedInput.metadata.wordCount,
-        language: processedInput.metadata.language
-      },
-    };
+          sourceDocuments: relevantDocs.map(doc => doc.metadata.source || 'unknown'),
+          toolsUsed: policyContext ? ['policy_search'] : []
+        },
+      };
+
+      return responseMessage;
+    } catch (error) {
+      console.error('Error in basic LLM processing:', error);
+      throw error;
+    }
   }
 
   /**
-   * Construct enhanced prompt for basic LLM
+   * NEW: Get relevant company policies for the current query
    */
-  private constructPrompt(
+  private async getRelevantPolicyContext(query: string, userContext: UserContext): Promise<string> {
+    try {
+      // Find the policy search tool
+      const policySearchTool = this.tools.find(tool => tool.name === 'policy_search');
+      
+      if (!policySearchTool) {
+        console.warn('Policy search tool not available');
+        return '';
+      }
+
+      // Get user's company context
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      
+      let companyId: string | undefined;
+      
+      // Try to get company from manager or employee
+      const manager = await prisma.manager.findFirst({
+        where: { id: userContext.userId },
+        select: { company: true }
+      });
+      
+      if (manager) {
+        companyId = manager.company;
+      } else {
+        const employee = await prisma.employee.findFirst({
+          where: { id: userContext.userId },
+          select: { company: true }
+        });
+        
+        if (employee) {
+          companyId = employee.company;
+        }
+      }
+
+      if (!companyId) {
+        console.warn('No company found for user:', userContext.userId);
+        return '';
+      }
+
+      // Search for relevant policies with company context
+      const searchInput = JSON.stringify({
+        action: 'search',
+        query: query,
+        category: userContext.department, // Use department as category filter
+        companyId: companyId // NEW: Add company context
+      });
+
+      const policyResults = await policySearchTool.call(searchInput);
+      const parsedResults = JSON.parse(policyResults) as {
+        success: boolean;
+        policies?: Array<{
+          title: string;
+          category: string;
+          summary: string;
+          relevanceScore?: number;
+        }>;
+      };
+
+      if (!parsedResults.success || !parsedResults.policies || parsedResults.policies.length === 0) {
+        return '';
+      }
+
+      // Format policy context for the prompt
+      const policyContext = parsedResults.policies
+        .slice(0, 2) // Limit to top 2 most relevant policies
+        .map((policy) => 
+          `Policy: ${policy.title}\nCategory: ${policy.category}\nSummary: ${policy.summary}\nRelevance: ${policy.relevanceScore?.toFixed(2) || 'N/A'}`
+        )
+        .join('\n\n');
+
+      return policyContext;
+    } catch (error) {
+      console.error('Error getting policy context:', error);
+      return '';
+    }
+  }
+
+  /**
+   * Enhanced prompt construction with policy context
+   */
+  private constructEnhancedPrompt(
     query: string,
     userContext: UserContext,
     documentContext: string,
+    policyContext: string,
     conversationHistory: ConversationMessage[]
   ): string {
     let conversationContextStr = '';
@@ -355,6 +417,16 @@ Thought:{agent_scratchpad}`;
         `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
       ).join('\n')}\n`;
     }
+
+    // NEW: Enhanced prompt with policy awareness
+    const policySection = policyContext ? `
+RELEVANT COMPANY POLICIES:
+---
+${policyContext}
+---
+
+IMPORTANT: When responding, consider these company policies and ensure your answer aligns with them. If the policies provide specific guidance, reference them in your response.
+` : '';
 
     return `You are an intelligent HR assistant for a company named Alchemyst. Your name is Aura.
 You are helping a ${userContext.role} in the ${userContext.department} department.
@@ -366,11 +438,12 @@ Response Guidelines:
 - **Do not sign your messages or use placeholders like "[Your Name]".** Just provide the answer.
 - Only refer to the "Recent Conversation" if the user's "Current Query" is a direct follow-up question (e.g., "what about for them?"). Otherwise, ignore the conversation history.
 - If you use information from a document, cite it by its title (e.g., "According to the benefits-guide...").
+- **NEW: Always consider company policies when responding. If relevant policies exist, ensure your response aligns with them and mention them when appropriate.**
 
 DOCUMENTS:
 ---
 ${documentContext}
----
+---${policySection}
 
 Recent Conversation:
 ${conversationContextStr}

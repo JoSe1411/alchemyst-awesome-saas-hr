@@ -1,4 +1,4 @@
-// src/lib/localModel.ts
+
 
 /**
  * Call a local LLM running on the developer machine (for example Ollama or
@@ -14,13 +14,12 @@ export async function localChat(prompt: string): Promise<string> {
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // Ollama-style body; adapt if you use a different local server
       body: JSON.stringify({
         model,
         prompt,
         stream: true,
         options: {
-          num_predict: 256,   // or even 128
+          num_predict: 256,   
           temperature: 0.7
         }
       }),

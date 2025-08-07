@@ -82,4 +82,4 @@ The application will be available at `http://localhost:3000`.
 - **AI**: LangChain.js with Google Gemini & local Ollama fallback
 - **Rate Limiting**: Upstash Redis
 - **Styling**: Tailwind CSS with Lucide for icons
-- **State Management**: Zustand 
+- **State Management**: Zustand
