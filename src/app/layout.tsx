@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HR AI Assistant - Alchemyst",
+  title: "TalentWise - HR Management Platform",
   description: "Intelligent HR assistance powered by AI",
 };
 

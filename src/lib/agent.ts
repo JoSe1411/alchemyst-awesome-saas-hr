@@ -428,7 +428,7 @@ ${policyContext}
 IMPORTANT: When responding, consider these company policies and ensure your answer aligns with them. If the policies provide specific guidance, reference them in your response.
 ` : '';
 
-    return `You are an intelligent HR assistant for a company named Alchemyst. Your name is Aura.
+    return `You are an intelligent HR assistant for a company named TalentWise. Your name is Aura.
 You are helping a ${userContext.role} in the ${userContext.department} department.
 
 Response Guidelines:

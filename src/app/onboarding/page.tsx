@@ -84,7 +84,7 @@ export default function OnboardingPage() {
         {/* dark tint overlay for better text contrast */}
         <div className="absolute inset-0 bg-indigo-900/20 pointer-events-none" />
         <div className="absolute inset-0 flex items-center justify-center">
-          <h2 className="text-5xl font-bold text-black drop-shadow-lg">Aceternity</h2>
+          <h2 className="text-5xl font-bold text-black drop-shadow-lg">TalentWise</h2>
         </div>
       </div>
 

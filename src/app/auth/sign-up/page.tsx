@@ -302,7 +302,7 @@ export default function SignUpPage() {
             <Building2 className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Create account</h1>
-          <p className="text-gray-600">Join thousands of teams using HR AI Assistant</p>
+          <p className="text-gray-600">Join thousands of teams using TalentWise</p>
         </div>
 
         {/* Sign Up Form */}
